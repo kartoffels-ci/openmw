@@ -1,4 +1,4 @@
-#version 120
+#version 430 compatibility
 
 #if @useUBO
     #extension GL_ARB_uniform_buffer_object : require
@@ -38,6 +38,10 @@ centroid varying vec3 shadowDiffuseLighting;
 #endif
 
 varying vec3 passNormal;
+
+uniform vec2 screenRes;
+uniform float far;
+uniform float near;
 
 #include "shadows_vertex.glsl"
 #include "compatibility/normals.glsl"
@@ -172,7 +176,7 @@ void main(void)
 #else
     vec3 diffuseLight, ambientLight, specularLight;
     vec3 unusedShadowSpecular;
-    doLighting(viewPos.xyz, viewNormal, gl_FrontMaterial.shininess, diffuseLight, ambientLight, specularLight, shadowDiffuseLighting, unusedShadowSpecular);
+    doLighting(gl_Position, viewPos.xyz, viewNormal, gl_FrontMaterial.shininess, diffuseLight, ambientLight, specularLight, shadowDiffuseLighting, unusedShadowSpecular);
     passLighting = diffuseLight + ambientLight;
     clampLightingResult(passLighting);
 #endif

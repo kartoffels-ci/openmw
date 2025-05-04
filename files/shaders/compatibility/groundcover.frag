@@ -1,4 +1,4 @@
-#version 120
+#version 430 compatibility
 
 #if @useUBO
     #extension GL_ARB_uniform_buffer_object : require
@@ -11,12 +11,10 @@
 #define GROUNDCOVER
 
 #if @diffuseMap
-uniform sampler2D diffuseMap;
 varying vec2 diffuseMapUV;
 #endif
 
 #if @normalMap
-uniform sampler2D normalMap;
 varying vec2 normalMapUV;
 #endif
 
@@ -28,6 +26,7 @@ varying float euclideanDepth;
 varying float linearDepth;
 uniform vec2 screenRes;
 uniform float far;
+uniform float near;
 uniform float alphaRef;
 
 #if PER_PIXEL_LIGHTING
@@ -44,11 +43,12 @@ varying vec3 passNormal;
 #include "lib/material/alpha.glsl"
 #include "fog.glsl"
 #include "compatibility/normals.glsl"
+#include "lib/core/fragment.h.glsl"
 
 void main()
 {
 #if @diffuseMap
-    gl_FragData[0] = texture2D(diffuseMap, diffuseMapUV);
+    gl_FragData[0] = sample_diffuse(diffuseMapUV);
 #else
     gl_FragData[0] = vec4(1.0);
 #endif
@@ -59,7 +59,7 @@ void main()
     gl_FragData[0].a = alphaTest(gl_FragData[0].a, alphaRef);
 
 #if @normalMap
-    vec4 normalTex = texture2D(normalMap, normalMapUV);
+    vec4 normalTex = sample_normal(normalMapUV);
     vec3 normal = normalTex.xyz * 2.0 - 1.0;
 #if @reconstructNormalZ
     normal.z = sqrt(1.0 - dot(normal.xy, normal.xy));
@@ -76,7 +76,7 @@ void main()
     lighting = passLighting + shadowDiffuseLighting * shadowing;
 #else
     vec3 diffuseLight, ambientLight, specularLight;
-    doLighting(passViewPos, viewNormal, gl_FrontMaterial.shininess, shadowing, diffuseLight, ambientLight, specularLight);
+    doLighting(gl_FragCoord.xyz, passViewPos, viewNormal, gl_FrontMaterial.shininess, shadowing, diffuseLight, ambientLight, specularLight);
     lighting = diffuseLight + ambientLight;
 #endif
 

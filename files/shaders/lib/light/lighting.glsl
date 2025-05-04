@@ -2,6 +2,7 @@
 #define LIB_LIGHT_LIGHTING
 
 #include "lighting_util.glsl"
+#include "lib/view/depth.glsl"
 
 float calcLambert(vec3 viewNormal, vec3 lightDir, vec3 viewDir)
 {
@@ -32,12 +33,52 @@ float calcSpecIntensity(vec3 viewNormal, vec3 viewDir, float shininess, vec3 lig
     return 0.0;
 }
 
+#if @lightingMethodUBO
+const int gridWidth = 16;
+const int gridHeight = 9;
+const int gridDepth = 24;
+
+layout(std430, binding = 5) buffer FroxelGrid
+{
+    uint offsetAndCount[];
+};
+
+layout(std430, binding = 6) buffer LightIndices
+{
+    uint lightIndices[];
+};
+
+#endif
+
 #if PER_PIXEL_LIGHTING
-void doLighting(vec3 viewPos, vec3 viewNormal, float shininess, float shadowing, out vec3 diffuseLight, out vec3 ambientLight, out vec3 specularLight)
+void doLighting(vec3 fragCoord, vec3 viewPos, vec3 viewNormal, float shininess, float shadowing, out vec3 diffuseLight,
+    out vec3 ambientLight, out vec3 specularLight)
 #else
-void doLighting(vec3 viewPos, vec3 viewNormal, float shininess, out vec3 diffuseLight, out vec3 ambientLight, out vec3 specularLight, out vec3 shadowDiffuse, out vec3 shadowSpecular)
+void doLighting(vec4 clipPos, vec3 viewPos, vec3 viewNormal, float shininess, out vec3 diffuseLight, out vec3 ambientLight,
+    out vec3 specularLight, out vec3 shadowDiffuse, out vec3 shadowSpecular)
 #endif
 {
+#if @lightingMethodUBO
+
+#if !PER_PIXEL_LIGHTING
+    vec3 ndc = clipPos.xyz / clipPos.w;
+    vec3 fragCoord = vec3(
+        (ndc.xy * 0.5 + 0.5) * screenRes,
+        ndc.z * 0.5 + 0.5
+    );
+#endif
+
+    uint zTile = uint((log(abs(linearizeDepth(fragCoord.z, near, far)) / near) * gridDepth) / log(8192 / near));
+    vec2 tileSize = screenRes / vec2(gridWidth, gridHeight);
+    uvec3 tiles = uvec3(uvec2(fragCoord.xy / tileSize), zTile);
+    uint froxelID = tiles.x +
+                     (gridWidth * tiles.y) +
+                     (gridWidth * gridHeight * tiles.z);
+    uint lightOffset = offsetAndCount[froxelID * 2];
+    uint lightCount = offsetAndCount[froxelID * 2 + 1];
+#endif
+
+
     vec3 viewDir = normalize(viewPos);
     shininess = max(shininess, 1e-4);
 
@@ -55,11 +96,13 @@ void doLighting(vec3 viewPos, vec3 viewNormal, float shininess, out vec3 diffuse
     specularLight = vec3(0.0);
 #endif
 
+#if @lightingMethodUBO
+    for (int i = 0; i < lightCount; ++i)
+    {
+        int lightIndex = int(lightIndices[lightOffset + i]);
+#else
     for (int i = @startLight; i < @endLight; ++i)
     {
-#if @lightingMethodUBO
-        int lightIndex = PointLightIndex[i];
-#else
         int lightIndex = i;
 #endif
         vec3 lightPos = lcalcPosition(lightIndex) - viewPos;
@@ -76,7 +119,8 @@ void doLighting(vec3 viewPos, vec3 viewNormal, float shininess, out vec3 diffuse
         float illumination = lcalcIllumination(lightIndex, lightDistance);
         diffuseLight += lcalcDiffuse(lightIndex) * calcLambert(viewNormal, lightDir, viewDir) * illumination;
         ambientLight += lcalcAmbient(lightIndex) * illumination;
-        specularLight += lcalcSpecular(lightIndex).xyz * calcSpecIntensity(viewNormal, viewDir, shininess, lightDir) * illumination;
+        specularLight += lcalcSpecular(lightIndex).xyz * calcSpecIntensity(viewNormal, viewDir, shininess, lightDir)
+            * illumination;
     }
 }
 

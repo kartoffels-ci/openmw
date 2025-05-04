@@ -20,6 +20,12 @@ namespace SceneUtil
     class LightBuffer;
     struct StateSetGenerator;
 
+    struct Froxel
+    {
+        std::uint32_t offset;
+        std::uint32_t count;
+    };
+
     class PPLightBuffer
     {
     public:
@@ -169,6 +175,9 @@ namespace SceneUtil
 
         auto& getLightBuffer(size_t frameNum) { return mLightBuffers[frameNum % 2]; }
 
+        std::vector<std::uint32_t> mLightIndices;
+        std::vector<Froxel> mFroxelGrid;
+
     private:
         std::string generateDummyShader(int maxLightsInScene);
         void initSharedLayout(osg::GLExtensions* ext, int handle, unsigned int frame) const;
@@ -178,6 +187,45 @@ namespace SceneUtil
         mutable std::array<osg::ref_ptr<LightBuffer>, 2> mLightBuffers;
         mutable std::array<bool, 2> mDirty;
         osg::ref_ptr<LightBuffer> mTemplate;
+    };
+
+    class ClusteredLightsAttribute : public osg::StateAttribute
+    {
+    public:
+        ClusteredLightsAttribute() = default;
+        ClusteredLightsAttribute(
+            const ClusteredLightsAttribute& copy, const osg::CopyOp& copyop = osg::CopyOp::SHALLOW_COPY);
+
+        int compare(const StateAttribute& sa) const override
+        {
+            throw std::runtime_error("ClusteredLightsAttribute::compare: unimplemented");
+        }
+
+        META_StateAttribute(SceneUtil, ClusteredLightsAttribute, static_cast<osg::StateAttribute::Type>(5000))
+
+        void apply(osg::State& state) const override;
+
+        std::vector<std::uint32_t> mLightIndices;
+        std::vector<Froxel> mFroxelGrid;
+
+        mutable GLuint mFroxelBuffer = 0;
+        mutable GLuint mLightIndexBuffer = 0;
+
+        mutable std::size_t mOldFroxelBufferSize = 0;
+        mutable std::size_t mOldLightIndexBufferSize = 0;
+    };
+
+    struct Cluster
+    {
+        osg::Vec3f minPoint;
+        osg::Vec3f maxPoint;
+    };
+
+    struct ViewDependentFroxel
+    {
+        std::vector<Cluster> mFroxelData;
+        std::array<osg::ref_ptr<ClusteredLightsAttribute>, 2> mAttribute
+            = { new ClusteredLightsAttribute, new ClusteredLightsAttribute };
     };
 
     struct LightSettings
@@ -279,7 +327,11 @@ namespace SceneUtil
 
         std::shared_ptr<PPLightBuffer> getPPLightsBuffer() { return mPPLightBuffer; }
 
-    private:
+        void generateFroxelGrid(osgUtil::CullVisitor* cv);
+
+        std::map<osg::observer_ptr<osg::Camera>, std::shared_ptr<ViewDependentFroxel>> mCachedFroxelBounds;
+
+        // private:
         void initFFP(int targetLights);
         void initPerObjectUniform(int targetLights);
         void initSingleUBO(int targetLights);
