@@ -1,4 +1,4 @@
-#version 120
+#version 430 compatibility
 
 #if @useUBO
     #extension GL_ARB_uniform_buffer_object : require
@@ -36,11 +36,13 @@ varying vec3 passNormal;
 
 uniform vec2 screenRes;
 uniform float far;
+uniform float near;
 
 #include "vertexcolors.glsl"
 #include "shadows_fragment.glsl"
 #include "lib/light/lighting.glsl"
 #include "lib/material/parallax.glsl"
+#include "lib/view/depth.glsl"
 #include "fog.glsl"
 #include "compatibility/normals.glsl"
 
@@ -88,7 +90,7 @@ void main()
     vec3 specularColor = getSpecularColor().xyz;
 #endif
     vec3 diffuseLight, ambientLight, specularLight;
-    doLighting(passViewPos, viewNormal, shininess, shadowing, diffuseLight, ambientLight, specularLight);
+    doLighting(gl_FragCoord.xyz, passViewPos, viewNormal, shininess, shadowing, diffuseLight, ambientLight, specularLight);
     lighting = diffuseColor.xyz * diffuseLight + getAmbientColor().xyz * ambientLight + getEmissionColor().xyz;
     specular = specularColor * specularLight;
 #endif
