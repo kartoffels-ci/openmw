@@ -1095,6 +1095,29 @@ namespace NifOsg
                 osg::ref_ptr<SceneUtil::TextureType> textureType = new SceneUtil::TextureType(name);
                 textureType = shareAttribute(textureType);
                 stateset->setTextureAttributeAndModes(texUnit, textureType, osg::StateAttribute::ON);
+
+                // BC6H/BC7 textures are not flipped during load (marked as TOP_LEFT origin).
+                // Apply UV flip via TexMat at render time to compensate.
+                if (image && image->getOrigin() == osg::Image::TOP_LEFT)
+                {
+                    osg::TexMat* existingTexMat = dynamic_cast<osg::TexMat*>(
+                        stateset->getTextureAttribute(texUnit, osg::StateAttribute::TEXMAT));
+
+                    osg::Matrixf flipMat;
+                    flipMat.preMultTranslate(osg::Vec3f(0.f, 1.f, 0.f));
+                    flipMat.preMultScale(osg::Vec3f(1.f, -1.f, 1.f));
+
+                    if (existingTexMat)
+                    {
+                        // Compose with existing TexMat transform
+                        existingTexMat->setMatrix(existingTexMat->getMatrix() * flipMat);
+                    }
+                    else
+                    {
+                        osg::ref_ptr<osg::TexMat> texMat = new osg::TexMat(flipMat);
+                        stateset->setTextureAttributeAndModes(texUnit, texMat, osg::StateAttribute::ON);
+                    }
+                }
             }
             boundTextures.emplace_back(uvSet);
             return texture2d;
