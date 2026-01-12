@@ -11,6 +11,7 @@
 #include <osg/Geometry>
 #include <osg/Material>
 #include <osg/Multisample>
+#include <osg/TexMat>
 #include <osg/Texture>
 #include <osg/ValueObject>
 
@@ -448,6 +449,17 @@ namespace Shader
                     writableStateSet->setTextureAttributeAndModes(unit,
                         new SceneUtil::TextureType(normalHeight ? "normalHeightMap" : "normalMap"),
                         osg::StateAttribute::ON);
+
+                    // BC6H/BC7 textures need UV flip (TOP_LEFT origin)
+                    // TODO: Could add explicit format check (0x8E8C-0x8E8F) for extra defensiveness
+                    if (image->getOrigin() == osg::Image::TOP_LEFT)
+                    {
+                        osg::Matrixf flipMat;
+                        flipMat.preMultTranslate(osg::Vec3f(0.f, 1.f, 0.f));
+                        flipMat.preMultScale(osg::Vec3f(1.f, -1.f, 1.f));
+                        writableStateSet->setTextureAttributeAndModes(unit, new osg::TexMat(flipMat), osg::StateAttribute::ON);
+                    }
+
                     mRequirements.back().mTextures[unit] = "normalMap";
                     mRequirements.back().mTexStageRequiringTangents = unit;
                     mRequirements.back().mShaderRequired = true;
@@ -493,6 +505,17 @@ namespace Shader
                     writableStateSet->setTextureAttributeAndModes(unit, specularMapTex, osg::StateAttribute::ON);
                     writableStateSet->setTextureAttributeAndModes(
                         unit, new SceneUtil::TextureType("specularMap"), osg::StateAttribute::ON);
+
+                    // BC6H/BC7 textures need UV flip (TOP_LEFT origin)
+                    // TODO: Could add explicit format check (0x8E8C-0x8E8F) for extra defensiveness
+                    if (image->getOrigin() == osg::Image::TOP_LEFT)
+                    {
+                        osg::Matrixf flipMat;
+                        flipMat.preMultTranslate(osg::Vec3f(0.f, 1.f, 0.f));
+                        flipMat.preMultScale(osg::Vec3f(1.f, -1.f, 1.f));
+                        writableStateSet->setTextureAttributeAndModes(unit, new osg::TexMat(flipMat), osg::StateAttribute::ON);
+                    }
+
                     mRequirements.back().mTextures[unit] = "specularMap";
                     mRequirements.back().mShaderRequired = true;
                 }

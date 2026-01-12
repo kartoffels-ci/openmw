@@ -1098,25 +1098,23 @@ namespace NifOsg
 
                 // BC6H/BC7 textures are not flipped during load (marked as TOP_LEFT origin).
                 // Apply UV flip via TexMat at render time to compensate.
+                // Only apply if no TexMat exists yet - avoids double-flip if texture is referenced twice.
+                // TODO: Could add explicit format check (0x8E8C-0x8E8F) for extra defensiveness
                 if (image && image->getOrigin() == osg::Image::TOP_LEFT)
                 {
                     osg::TexMat* existingTexMat = dynamic_cast<osg::TexMat*>(
                         stateset->getTextureAttribute(texUnit, osg::StateAttribute::TEXMAT));
 
-                    osg::Matrixf flipMat;
-                    flipMat.preMultTranslate(osg::Vec3f(0.f, 1.f, 0.f));
-                    flipMat.preMultScale(osg::Vec3f(1.f, -1.f, 1.f));
-
-                    if (existingTexMat)
+                    if (!existingTexMat)
                     {
-                        // Compose with existing TexMat transform
-                        existingTexMat->setMatrix(existingTexMat->getMatrix() * flipMat);
-                    }
-                    else
-                    {
+                        osg::Matrixf flipMat;
+                        flipMat.preMultTranslate(osg::Vec3f(0.f, 1.f, 0.f));
+                        flipMat.preMultScale(osg::Vec3f(1.f, -1.f, 1.f));
                         osg::ref_ptr<osg::TexMat> texMat = new osg::TexMat(flipMat);
                         stateset->setTextureAttributeAndModes(texUnit, texMat, osg::StateAttribute::ON);
                     }
+                    // If TexMat already exists (e.g., from UV animation or previous attachment),
+                    // assume flip is already handled or not needed - don't double-flip.
                 }
             }
             boundTextures.emplace_back(uvSet);

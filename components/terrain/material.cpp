@@ -81,6 +81,70 @@ namespace
         std::map<float, osg::ref_ptr<osg::TexMat>> mTexMatMap;
     };
 
+    // Cached TexMat for BC6H/BC7 textures that need UV flip combined with layer tiling
+    class LayerTexMatFlipped
+    {
+    public:
+        static const osg::ref_ptr<osg::TexMat>& value(const float layerTileSize)
+        {
+            static LayerTexMatFlipped instance;
+            return instance.get(layerTileSize);
+        }
+
+        const osg::ref_ptr<osg::TexMat>& get(const float layerTileSize)
+        {
+            const std::lock_guard<std::mutex> lock(mMutex);
+            auto texMat = mTexMatMap.find(layerTileSize);
+            if (texMat == mTexMatMap.end())
+            {
+                // Combine layer tiling scale with UV flip for TOP_LEFT origin textures
+                osg::Matrixf matrix;
+                matrix.preMultScale(osg::Vec3f(layerTileSize, layerTileSize, 1.f));
+                // Apply UV flip: translate Y by 1, then scale Y by -1
+                matrix.preMultTranslate(osg::Vec3f(0.f, 1.f, 0.f));
+                matrix.preMultScale(osg::Vec3f(1.f, -1.f, 1.f));
+                texMat = mTexMatMap.emplace(layerTileSize, new osg::TexMat(matrix)).first;
+            }
+            return texMat->second;
+        }
+
+    private:
+        std::mutex mMutex;
+        std::map<float, osg::ref_ptr<osg::TexMat>> mTexMatMap;
+    };
+
+    // Cached TexMat for UV flip only (when layerTileSize == 1)
+    class FlipTexMat
+    {
+    public:
+        static const osg::ref_ptr<osg::TexMat>& value()
+        {
+            static FlipTexMat instance;
+            return instance.mValue;
+        }
+
+    private:
+        osg::ref_ptr<osg::TexMat> mValue;
+
+        FlipTexMat()
+        {
+            osg::Matrixf matrix;
+            matrix.preMultTranslate(osg::Vec3f(0.f, 1.f, 0.f));
+            matrix.preMultScale(osg::Vec3f(1.f, -1.f, 1.f));
+            mValue = new osg::TexMat(matrix);
+        }
+    };
+
+    // Helper to check if texture image needs UV flip (BC6H/BC7 with TOP_LEFT origin)
+    // TODO: Could add explicit format check (0x8E8C-0x8E8F) for extra defensiveness
+    bool needsUVFlip(const osg::Texture2D* texture)
+    {
+        if (!texture)
+            return false;
+        const osg::Image* image = texture->getImage(0);
+        return image && image->getOrigin() == osg::Image::TOP_LEFT;
+    }
+
     class EqualDepth
     {
     public:
@@ -257,9 +321,14 @@ namespace Terrain
             {
                 stateset->setTextureAttributeAndModes(0, it->mDiffuseMap);
 
+                // BC6H/BC7 textures need UV flip (TOP_LEFT origin)
+                bool flipDiffuse = needsUVFlip(it->mDiffuseMap.get());
                 if (layerTileSize != 1.f)
-                    stateset->setTextureAttributeAndModes(
-                        0, LayerTexMat::value(layerTileSize), osg::StateAttribute::ON);
+                    stateset->setTextureAttributeAndModes(0,
+                        flipDiffuse ? LayerTexMatFlipped::value(layerTileSize) : LayerTexMat::value(layerTileSize),
+                        osg::StateAttribute::ON);
+                else if (flipDiffuse)
+                    stateset->setTextureAttributeAndModes(0, FlipTexMat::value(), osg::StateAttribute::ON);
 
                 stateset->addUniform(UniformCollection::value().mDiffuseMap);
 
@@ -280,6 +349,10 @@ namespace Terrain
                 {
                     stateset->setTextureAttributeAndModes(2, it->mNormalMap);
                     stateset->addUniform(UniformCollection::value().mNormalMap);
+
+                    // BC6H/BC7 normal maps need UV flip
+                    if (needsUVFlip(it->mNormalMap.get()))
+                        stateset->setTextureAttributeAndModes(2, FlipTexMat::value(), osg::StateAttribute::ON);
 
                     // Special handling for red-green normal maps (e.g. BC5 or R8G8).
                     const osg::Image* image = it->mNormalMap->getImage(0);
@@ -315,9 +388,14 @@ namespace Terrain
                 osg::ref_ptr<osg::Texture2D> tex = it->mDiffuseMap;
                 stateset->setTextureAttributeAndModes(0, tex.get());
 
+                // BC6H/BC7 textures need UV flip (TOP_LEFT origin)
+                bool flipDiffuse = needsUVFlip(tex.get());
                 if (layerTileSize != 1.f)
-                    stateset->setTextureAttributeAndModes(
-                        0, LayerTexMat::value(layerTileSize), osg::StateAttribute::ON);
+                    stateset->setTextureAttributeAndModes(0,
+                        flipDiffuse ? LayerTexMatFlipped::value(layerTileSize) : LayerTexMat::value(layerTileSize),
+                        osg::StateAttribute::ON);
+                else if (flipDiffuse)
+                    stateset->setTextureAttributeAndModes(0, FlipTexMat::value(), osg::StateAttribute::ON);
 
                 stateset->setTextureAttributeAndModes(0, DiscardAlphaCombine::value(), osg::StateAttribute::ON);
 
