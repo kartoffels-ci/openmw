@@ -938,8 +938,7 @@ namespace MWMechanics
                     mCurrentWeapon = getWeaponAnimation(mWeaponType);
                 }
 
-                if (mWeaponType != ESM::Weapon::None && mWeaponType != ESM::Weapon::Spell
-                    && mWeaponType != ESM::Weapon::HandToHand)
+                if (isWeapon(mWeaponType))
                 {
                     mAnimation->showWeapons(true);
                     // Note: controllers for ranged weapon should use time for beginning of animation to play shooting
