@@ -375,7 +375,6 @@ namespace CSMWorld
                 throw std::runtime_error("index out of range");
 
             ESM::ENAMstruct effect = effectsList[subRowIndex].mData;
-            bool targetSkill = false, targetAttribute = false;
 
             switch (subColIndex)
             {
@@ -383,21 +382,17 @@ namespace CSMWorld
                 {
                     effect.mEffectID = ESM::MagicEffect::indexToRefId(value.toInt());
                     int recordIndex = mMagicEffects.searchId(effect.mEffectID);
+                    bool targetSkill = false, targetAttribute = false;
                     if (recordIndex != -1)
                     {
                         const ESM::MagicEffect& mgef = mMagicEffects.getRecord(recordIndex).get();
                         targetSkill = mgef.mData.mFlags & ESM::MagicEffect::TargetSkill;
                         targetAttribute = mgef.mData.mFlags & ESM::MagicEffect::TargetAttribute;
                     }
-                    if (targetSkill)
-                        effect.mAttribute = -1;
-                    else if (targetAttribute)
+                    if (!targetSkill)
                         effect.mSkill = -1;
-                    else
-                    {
-                        effect.mSkill = -1;
+                    if (!targetAttribute)
                         effect.mAttribute = -1;
-                    }
                     break;
                 }
                 case 1:
