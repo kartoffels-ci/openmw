@@ -311,10 +311,14 @@ namespace
         return 0.f;
     }
 
+    bool isWeapon(int weaponType)
+    {
+        return weaponType != ESM::Weapon::Spell && weaponType != ESM::Weapon::None;
+    }
+
     bool isRealWeapon(int weaponType)
     {
-        return weaponType != ESM::Weapon::HandToHand && weaponType != ESM::Weapon::Spell
-            && weaponType != ESM::Weapon::None;
+        return isWeapon(weaponType) && weaponType != ESM::Weapon::HandToHand;
     }
 
 }
@@ -934,8 +938,7 @@ namespace MWMechanics
                     mCurrentWeapon = getWeaponAnimation(mWeaponType);
                 }
 
-                if (mWeaponType != ESM::Weapon::None && mWeaponType != ESM::Weapon::Spell
-                    && mWeaponType != ESM::Weapon::HandToHand)
+                if (isWeapon(mWeaponType))
                 {
                     mAnimation->showWeapons(true);
                     // Note: controllers for ranged weapon should use time for beginning of animation to play shooting
@@ -1256,11 +1259,14 @@ namespace MWMechanics
         if (mAttackStrength == -1.f)
             mAttackStrength = std::min(1.f, 0.1f + Misc::Rng::rollClosedProbability(prng));
         ESM::WeaponType::Class weapclass = getWeaponType(mWeaponType)->mWeaponClass;
-        if (weapclass != ESM::WeaponType::Ranged && weapclass != ESM::WeaponType::Thrown)
+        if (weapclass != ESM::WeaponType::Ranged)
         {
-            mAttackSuccess = mPtr.getClass().evaluateHit(mPtr, mAttackVictim, mAttackHitPos);
-            if (!mAttackSuccess)
-                mAttackStrength = 0.f;
+            if (weapclass != ESM::WeaponType::Thrown)
+            {
+                mAttackSuccess = mPtr.getClass().evaluateHit(mPtr, mAttackVictim, mAttackHitPos);
+                if (!mAttackSuccess)
+                    mAttackStrength = 0.f;
+            }
             playSwishSound();
         }
 
@@ -1362,12 +1368,12 @@ namespace MWMechanics
 
         bool forcestateupdate = false;
 
-        // We should not play equipping animation and sound during weapon->weapon transition
-        const bool isStillWeapon = isRealWeapon(mWeaponType) && isRealWeapon(weaptype);
-
         // If the current weapon type was changed in the middle of attack (e.g. by Equip console command or when bound
         // spell expires), we should force actor to the "weapon equipped" state, interrupt attack and update animations.
-        if (isStillWeapon && mWeaponType != weaptype && mUpperBodyState > UpperBodyState::WeaponEquipped)
+        // Morrowind does this at the end of the attack (see #4646 and PR 1972).
+        // If we decide to cope with the resulting problems, the thrown weapon->H2H case below should be extended.
+        const bool weaponToWeapon = mWeaponType != weaptype && isRealWeapon(mWeaponType) && isRealWeapon(weaptype);
+        if (weaponToWeapon && mUpperBodyState > UpperBodyState::WeaponEquipped)
         {
             forcestateupdate = true;
             if (!mCurrentWeapon.empty())
@@ -1379,10 +1385,13 @@ namespace MWMechanics
 
         if (!isKnockedOut() && !isKnockedDown() && !isRecovery())
         {
+            // Stance changes (from/to None or Spell) trigger equip/unequip animations
+            const bool stanceChanged = mWeaponType != weaptype && !(isWeapon(mWeaponType) && isWeapon(weaptype));
+
             std::string weapgroup;
-            if (((!isWerewolf && cls.isBipedal(mPtr)) || mWeaponType != ESM::Weapon::Spell) && weaptype != mWeaponType
-                && mUpperBodyState <= UpperBodyState::AttackWindUp && mUpperBodyState != UpperBodyState::Unequipping
-                && !isStillWeapon)
+            const bool playSpellEquip = !isWerewolf && cls.isBipedal(mPtr);
+            if ((playSpellEquip || mWeaponType != ESM::Weapon::Spell) && stanceChanged
+                && mUpperBodyState <= UpperBodyState::AttackWindUp && mUpperBodyState != UpperBodyState::Unequipping)
             {
                 // We can not play un-equip animation if weapon changed since last update
                 if (!weaponChanged)
@@ -1442,7 +1451,9 @@ namespace MWMechanics
                     bool useRelativeDuration = weaponClass == ESM::WeaponType::Ranged;
                     mAnimation->setWeaponGroup(weapgroup, useRelativeDuration);
 
-                    if (!isStillWeapon)
+                    // Equip animation should also be played during weapon->H2H transitions
+                    const bool weaponToH2H = isRealWeapon(mWeaponType) && weaptype == ESM::Weapon::HandToHand;
+                    if (stanceChanged || weaponToH2H)
                     {
                         if (animPlaying)
                             mAnimation->disable(mCurrentWeapon);
@@ -1843,6 +1854,20 @@ namespace MWMechanics
 
                 if (animPlaying)
                     mAnimation->disable(mCurrentWeapon);
+
+                // Skip Thrown->H2H idle transition (e.g., if we've run out of ammo)
+                // In Morrowind this isn't actually specific to this transition
+                // See the weapon->weapon mid-attack skip logic above
+                if (mUpperBodyState == UpperBodyState::AttackEnd)
+                {
+                    if (weapclass == ESM::WeaponType::Thrown && weaptype == ESM::Weapon::HandToHand)
+                    {
+                        forcestateupdate = true;
+                        mWeaponType = weaptype;
+                        mCurrentWeapon = getWeaponAnimation(mWeaponType);
+                        mAnimation->showWeapons(true);
+                    }
+                }
 
                 mUpperBodyState = UpperBodyState::WeaponEquipped;
             }

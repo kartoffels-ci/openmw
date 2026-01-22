@@ -60,7 +60,6 @@ namespace Compiler
         , mCode(code)
         , mState(BeginState)
         , mReferenceMember(false)
-        , mButtons(0)
         , mType(0)
         , mExprParser(errorHandler, context, locals, literals)
         , mAllowExpression(allowExpression)
@@ -156,7 +155,6 @@ namespace Compiler
             }
 
             mName = name;
-            mButtons = 0;
 
             mState = MessageButtonState;
             return true;
@@ -164,9 +162,11 @@ namespace Compiler
 
         if (mState == MessageButtonState)
         {
-            Generator::pushString(mCode, mLiterals, name);
-            mState = MessageButtonState;
-            ++mButtons;
+            mPotentialButtons.push_back(name);
+            // Replicate the fascinating behavior where, to determine the number of actual buttons,
+            // Morrowind counts the number of quoted arguments.
+            if (loc.mLiteral.size() >= 2 && loc.mLiteral.front() == '"' && loc.mLiteral.back() == '"')
+                ++mNumButtons;
             return true;
         }
 
@@ -451,7 +451,11 @@ namespace Compiler
 
         if (code == Scanner::S_newline && mState == MessageButtonState)
         {
-            Generator::message(mCode, mLiterals, mName, mButtons);
+            for (unsigned int i = 0; i < mNumButtons; ++i)
+                Generator::pushString(mCode, mLiterals, mPotentialButtons[i]);
+            Generator::message(mCode, mLiterals, mName, mNumButtons);
+            mPotentialButtons.clear();
+            mNumButtons = 0;
             return false;
         }
 
