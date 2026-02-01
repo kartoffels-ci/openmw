@@ -277,6 +277,19 @@ namespace Nif
 
         if (nif->getVersion() >= NIFStream::generateVersion(10, 1, 0, 0))
             nif->read(mLookAtFlags);
+        else
+        {
+
+            // See MWSE NILookAtController.h: FlipAxis = 0x10, AxisY = 0x20, AxisZ = 0x40
+            mLookAtFlags = 0;
+            if (mFlags & 0x0010)
+                mLookAtFlags |= Flag_Flip;
+            uint16_t axis = (mFlags >> 5) & 0x3;
+            if (axis == 1)
+                mLookAtFlags |= Flag_LookYAxis;
+            else if (axis == 2)
+                mLookAtFlags |= Flag_LookZAxis;
+        }
         mLookAt.read(nif);
     }
 

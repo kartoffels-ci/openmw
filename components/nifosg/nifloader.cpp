@@ -307,6 +307,10 @@ namespace NifOsg
         // This is used to queue emitters that weren't attached to their node yet.
         std::vector<std::pair<unsigned int, osg::ref_ptr<Emitter>>> mEmitterQueue;
 
+        // This is used to queue look-at controllers whose target nodes may not have been created yet.
+        // Mutable because handleNodeControllers is const.
+        mutable std::vector<std::pair<std::string, osg::ref_ptr<LookAtController>>> mLookAtQueue;
+
         void loadKf(Nif::FileView nif, SceneUtil::KeyframeHolder& target) const
         {
             const Nif::NiSequenceStreamHelper* seq = nullptr;
@@ -428,6 +432,9 @@ namespace NifOsg
 
             // Attach particle emitters to their nodes which should all be loaded by now.
             handleQueuedParticleEmitters(created, nif);
+
+            // Resolve look-at controller targets now that all nodes are loaded.
+            handleQueuedLookAtControllers(created);
 
             if (nif.getUseSkinning())
             {
@@ -1009,6 +1016,18 @@ namespace NifOsg
                     node->addUpdateCallback(callback);
                     isAnimated = true;
                 }
+                else if (ctrl->mRecordType == Nif::RC_NiLookAtController)
+                {
+                    const Nif::NiLookAtController* lookatctrl
+                        = static_cast<const Nif::NiLookAtController*>(ctrl.getPtr());
+                    if (lookatctrl->mLookAt.empty())
+                        continue;
+                    osg::ref_ptr<LookAtController> callback(new LookAtController(lookatctrl));
+                    setupController(lookatctrl, callback, animflags);
+                    node->addUpdateCallback(callback);
+                    isAnimated = true;
+                    mLookAtQueue.emplace_back(lookatctrl->mLookAt->mName, callback);
+                }
                 else if (ctrl->mRecordType == Nif::RC_NiGeomMorpherController
                     || ctrl->mRecordType == Nif::RC_NiParticleSystemController
                     || ctrl->mRecordType == Nif::RC_NiBSPArrayController || ctrl->mRecordType == Nif::RC_NiUVController)
@@ -1369,6 +1388,45 @@ namespace NifOsg
                 emitterNode->accept(disableOptimizer);
             }
             mEmitterQueue.clear();
+        }
+
+        void handleQueuedLookAtControllers(osg::Group* rootNode)
+        {
+            for (const auto& [targetName, controller] : mLookAtQueue)
+            {
+                // Find target node by name within the loaded subgraph.
+                // We resolve by name rather than recordIndex because recordIndex is not reliable
+                // after cloning (wrapper nodes lose it) and should not be depended on in general.
+                osg::Group* targetNode = nullptr;
+                struct FindGroupByName : osg::NodeVisitor
+                {
+                    std::string mName;
+                    osg::Group* mFound = nullptr;
+                    FindGroupByName(const std::string& name)
+                        : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN), mName(name) {}
+                    void apply(osg::Group& node) override
+                    {
+                        if (!mFound && node.getName() == mName)
+                            mFound = &node;
+                        else
+                            traverse(node);
+                    }
+                };
+                FindGroupByName visitor(targetName);
+                rootNode->accept(visitor);
+                targetNode = visitor.mFound;
+
+                if (!targetNode)
+                {
+                    Log(Debug::Warning) << "NIFFile Warning: Failed to find look-at target node '"
+                                        << targetName << "'. File: " << mFilename;
+                    continue;
+                }
+
+                controller->setTarget(targetNode);
+                targetNode->setDataVariance(osg::Object::DYNAMIC);
+            }
+            mLookAtQueue.clear();
         }
 
         void handleParticleSystem(const Nif::NiAVObject* nifNode, const Nif::Parent* parent, osg::Group* parentNode,

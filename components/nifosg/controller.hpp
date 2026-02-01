@@ -2,8 +2,10 @@
 #define COMPONENTS_NIFOSG_CONTROLLER_H
 
 #include <set>
+#include <string>
 #include <type_traits>
 
+#include <osg/observer_ptr>
 #include <osg/Texture2D>
 
 #include <components/nif/controller.hpp>
@@ -418,6 +420,26 @@ namespace NifOsg
         int mFlags{ 0 };
 
         float getPercent(float time) const;
+    };
+
+    class LookAtController : public SceneUtil::NodeCallback<LookAtController, NifOsg::MatrixTransform*>,
+                             public SceneUtil::Controller
+    {
+    public:
+        LookAtController(const Nif::NiLookAtController* ctrl);
+        LookAtController() = default;
+        LookAtController(const LookAtController& copy, const osg::CopyOp& copyop);
+
+        META_Object(NifOsg, LookAtController)
+
+        void operator()(NifOsg::MatrixTransform*, osg::NodeVisitor*);
+
+        void setTarget(osg::Group* target);
+
+    private:
+        std::string mTargetName;
+        uint16_t mLookAtFlags{ 0 };
+        osg::observer_ptr<osg::Group> mTarget;
     };
 
 }

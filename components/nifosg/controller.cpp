@@ -2,6 +2,7 @@
 
 #include <osg/Material>
 #include <osg/MatrixTransform>
+#include <osg/NodeVisitor>
 #include <osg/TexMat>
 #include <osg/Texture2D>
 
@@ -650,6 +651,172 @@ namespace NifOsg
         float time = getInputValue(nv);
         float percent = getPercent(time);
         node->setTranslation(mPath.interpKey(percent));
+
+        traverse(node, nv);
+    }
+
+    namespace
+    {
+        class FindNodeByName : public osg::NodeVisitor
+        {
+        public:
+            FindNodeByName(const std::string& name)
+                : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN)
+                , mName(name)
+                , mFound(nullptr)
+            {
+            }
+
+            void apply(osg::Group& node) override
+            {
+                if (node.getName() == mName)
+                {
+                    mFound = &node;
+                    return;
+                }
+                traverse(node);
+            }
+
+            const std::string& mName;
+            osg::Group* mFound;
+        };
+    }
+
+    LookAtController::LookAtController(const Nif::NiLookAtController* ctrl)
+        : mTargetName(ctrl->mLookAt->mName)
+        , mLookAtFlags(ctrl->mLookAtFlags)
+    {
+    }
+
+    LookAtController::LookAtController(const LookAtController& copy, const osg::CopyOp& copyop)
+        : SceneUtil::NodeCallback<LookAtController, NifOsg::MatrixTransform*>(copy, copyop)
+        , SceneUtil::Controller(copy)
+        , mTargetName(copy.mTargetName)
+        , mLookAtFlags(copy.mLookAtFlags)
+    {
+        // mTarget intentionally left null -- will be re-resolved by name in the cloned subgraph
+    }
+
+    void LookAtController::setTarget(osg::Group* target)
+    {
+        mTarget = target;
+    }
+
+    void LookAtController::operator()(NifOsg::MatrixTransform* node, osg::NodeVisitor* nv)
+    {
+        osg::ref_ptr<osg::Group> target;
+        if (!mTarget.lock(target))
+        {
+            // Re-resolve by name after cloning for instancing.
+            // Walk up the parent chain, searching each ancestor's subtree for the target node.
+            // We resolve by name rather than recordIndex because recordIndex is not reliable
+            // after cloning (wrapper nodes lose it) and should not be depended on in general.
+            osg::Group* ancestor = node->getNumParents() > 0 ? node->getParent(0) : nullptr;
+            while (ancestor)
+            {
+                FindNodeByName visitor(mTargetName);
+                ancestor->accept(visitor);
+                if (visitor.mFound)
+                {
+                    mTarget = visitor.mFound;
+                    target = visitor.mFound;
+                    break;
+                }
+                ancestor = ancestor->getNumParents() > 0 ? ancestor->getParent(0) : nullptr;
+            }
+
+            if (!target)
+            {
+                // TODO: log warning about missing target?
+                traverse(node, nv);
+                return;
+            }
+        }
+
+        // Get world positions
+        const osg::NodePath& nodePath = nv->getNodePath();
+        osg::Matrixf nodeWorldMat = osg::computeLocalToWorld(nodePath);
+        osg::Vec3f nodeWorldPos = nodeWorldMat.getTrans();
+
+        osg::MatrixList targetMats = target->getWorldMatrices();
+        if (targetMats.empty())
+        {
+            traverse(node, nv);
+            return;
+        }
+        osg::Vec3f targetWorldPos = targetMats.front().getTrans();
+
+        // Compute direction in world space
+        osg::Vec3f worldDir = targetWorldPos - nodeWorldPos;
+        float len = worldDir.length();
+        if (len < 1e-6f)
+        {
+            traverse(node, nv);
+            return;
+        }
+        worldDir /= len;
+
+        // Transform direction to parent's local space
+        osg::Matrixf parentWorldMat;
+        if (nodePath.size() > 1)
+        {
+            osg::NodePath parentPath(nodePath.begin(), nodePath.end() - 1);
+            parentWorldMat = osg::computeLocalToWorld(parentPath);
+        }
+        osg::Matrixf parentWorldInv = osg::Matrixf::inverse(parentWorldMat);
+        osg::Vec3f localDir = osg::Matrixf::transform3x3(worldDir, parentWorldInv);
+        localDir.normalize();
+
+        // Build a constrained look-at rotation matrix.
+        // Which axis is "forward" depends on the flag; preferred up is world Z.
+        // Per MWSE: negate forward when flip is NOT set. No idea why.
+        osg::Vec3f forward = localDir;
+        if (!(mLookAtFlags & Nif::NiLookAtController::Flag_Flip))
+            forward = -forward;
+
+        // Preferred up in parent-local space
+        osg::Vec3f up = osg::Matrixf::transform3x3(osg::Vec3f(0.f, 0.f, 1.f), parentWorldInv);
+        up.normalize();
+
+        // Orthonormalize: left = cross(up, forward), then recompute up
+        osg::Vec3f left = up ^ forward;
+        float leftLen = left.length();
+        if (leftLen < 1e-6f)
+        {
+            // Forward is nearly parallel to up; skip this frame to avoid cross product degeneration.
+            traverse(node, nv);
+            return;
+        }
+        left /= leftLen;
+        up = forward ^ left;
+
+        // Assign basis vectors into the rotation matrix based on which axis points at target.
+        // OSG stores basis vectors as rows: row 0 = X, row 1 = Y, row 2 = Z.
+        osg::Matrixf rotMat;
+        osg::Vec3f rowX, rowY, rowZ;
+        if (mLookAtFlags & Nif::NiLookAtController::Flag_LookZAxis)
+        {
+            rowZ = forward; rowX = left; rowY = up;
+        }
+        else if (mLookAtFlags & Nif::NiLookAtController::Flag_LookYAxis)
+        {
+            rowY = forward; rowZ = up; rowX = forward ^ up;
+        }
+        else
+        {
+            // Default: X axis looks at target
+            // TODO: verify this assumption
+            // (generally should have Flag_LookXAxis set)
+            rowX = forward; rowZ = up; rowY = left;
+        }
+
+        rotMat(0, 0) = rowX.x(); rotMat(0, 1) = rowX.y(); rotMat(0, 2) = rowX.z();
+        rotMat(1, 0) = rowY.x(); rotMat(1, 1) = rowY.y(); rotMat(1, 2) = rowY.z();
+        rotMat(2, 0) = rowZ.x(); rotMat(2, 1) = rowZ.y(); rotMat(2, 2) = rowZ.z();
+
+        osg::Quat rotation;
+        rotation.set(rotMat);
+        node->setRotation(rotation);
 
         traverse(node, nv);
     }
