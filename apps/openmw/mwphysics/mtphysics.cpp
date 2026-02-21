@@ -538,6 +538,8 @@ namespace MWPhysics
         auto [numSteps, newDelta] = calculateStepConfig(timeAccum);
         timeAccum -= numSteps * newDelta;
 
+        mPlayerPos = MWBase::Environment::get().getWorld()->getPlayerConstPtr().getRefData().getPosition().asVec3();
+
         // init
         const Visitors::InitPosition vis{ mCollisionWorld };
         for (auto& sim : simulations)
@@ -550,6 +552,7 @@ namespace MWPhysics
         mPhysicsDt = newDelta;
         mSimulations = &simulations;
         mAdvanceSimulation = (mRemainingSteps != 0);
+        ++mLOSStepCounter;
         mNumJobs = static_cast<int>(mSimulations->size());
         mNextLOS.store(0, std::memory_order_relaxed);
         mNextJob.store(0, std::memory_order_release);
@@ -700,6 +703,7 @@ namespace MWPhysics
         MaybeSharedLock lock(mLOSCacheMutex, mLockingPolicy);
         int job = 0;
         int numLOS = static_cast<int>(mLOSCache.size());
+        const unsigned int step = mLOSStepCounter;
         while ((job = mNextLOS.fetch_add(1, std::memory_order_relaxed)) < numLOS)
         {
             auto& req = mLOSCache[job];
@@ -707,9 +711,28 @@ namespace MWPhysics
             auto actorPtr2 = req.mActors[1].lock();
 
             if (req.mAge++ > mLOSCacheExpiry || !actorPtr1 || !actorPtr2)
+            {
                 req.mStale = true;
-            else
-                req.mResult = hasLineOfSight(actorPtr1.get(), actorPtr2.get());
+                continue;
+            }
+
+            // Rate-limit LOS raycasts by distance from player.
+            const osg::Vec3f midpoint = (actorPtr1->getCollisionObjectPosition()
+                                          + actorPtr2->getCollisionObjectPosition()) * 0.5f;
+            const float dist2 = (midpoint - mPlayerPos).length2();
+            const unsigned int jobIdx = static_cast<unsigned int>(job);
+            if (dist2 > 1500.f * 1500.f)
+            {
+                if ((step % 10) != (jobIdx % 10))
+                    continue; // keep cached result
+            }
+            else if (dist2 > 500.f * 500.f)
+            {
+                if ((step % 3) != (jobIdx % 3))
+                    continue;
+            }
+
+            req.mResult = hasLineOfSight(actorPtr1.get(), actorPtr2.get());
         }
     }
 

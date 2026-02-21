@@ -38,7 +38,7 @@ namespace MWPhysics
     }
 
     void ActorTracer::doTrace(const btCollisionObject* actor, const osg::Vec3f& start, const osg::Vec3f& end,
-        const btCollisionWorld* world, bool attemptShortTrace)
+        const btCollisionWorld* world, bool attemptShortTrace, bool actorFilter)
     {
         const btVector3 btstart = Misc::Convert::toBullet(start);
         btVector3 btend = Misc::Convert::toBullet(end);
@@ -62,7 +62,7 @@ namespace MWPhysics
             doingShortTrace = true;
         }
 
-        const auto traceCallback = sweepHelper(actor, btstart, btend, world, false);
+        const auto traceCallback = sweepHelper(actor, btstart, btend, world, actorFilter);
 
         // Copy the hit data over to our trace results struct:
         if (traceCallback.hasHit())
@@ -81,7 +81,7 @@ namespace MWPhysics
             if (doingShortTrace)
             {
                 btend = Misc::Convert::toBullet(end);
-                const auto newTraceCallback = sweepHelper(actor, btstart, btend, world, false);
+                const auto newTraceCallback = sweepHelper(actor, btstart, btend, world, actorFilter);
 
                 if (newTraceCallback.hasHit())
                 {
