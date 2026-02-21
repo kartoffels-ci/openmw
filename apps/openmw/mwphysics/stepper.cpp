@@ -22,9 +22,10 @@ namespace MWPhysics
         return stepper.mHitObject->getBroadphaseHandle()->m_collisionFilterGroup != CollisionType_Actor;
     }
 
-    Stepper::Stepper(const btCollisionWorld* colWorld, const btCollisionObject* colObj)
+    Stepper::Stepper(const btCollisionWorld* colWorld, const btCollisionObject* colObj, bool actorFilter)
         : mColWorld(colWorld)
         , mColObj(colObj)
+        , mActorFilter(actorFilter)
     {
     }
 
@@ -39,7 +40,7 @@ namespace MWPhysics
         // just prevent stepping on insane geometry.
 
         mUpStepper.doTrace(
-            mColObj, position, position + osg::Vec3f(0.0f, 0.0f, Constants::sStepSizeUp), mColWorld, onGround);
+            mColObj, position, position + osg::Vec3f(0.0f, 0.0f, Constants::sStepSizeUp), mColWorld, onGround, mActorFilter);
 
         float upDistance = 0;
         if (!mUpStepper.mHitObject)
@@ -91,7 +92,7 @@ namespace MWPhysics
                 tracerDest = tracerPos + normalMove * sMinStep2;
             }
 
-            mTracer.doTrace(mColObj, tracerPos, tracerDest, mColWorld);
+            mTracer.doTrace(mColObj, tracerPos, tracerDest, mColWorld, false, mActorFilter);
             if (mTracer.mHitObject)
             {
                 // map against what we hit, minus the safety margin
@@ -108,7 +109,7 @@ namespace MWPhysics
                 auto tempDest = tracerDest + mTracer.mPlaneNormal * sCollisionMargin * 2;
 
                 ActorTracer tempTracer;
-                tempTracer.doTrace(mColObj, tracerDest, tempDest, mColWorld);
+                tempTracer.doTrace(mColObj, tracerDest, tempDest, mColWorld, false, mActorFilter);
 
                 if (tempTracer.mFraction > 0.5f) // distance to any object is greater than sCollisionMargin (we checked
                                                  // sCollisionMargin*2 distance)
@@ -123,7 +124,7 @@ namespace MWPhysics
             else
                 downStepSize = moveDistance + upDistance + sStepSizeDown;
             mDownStepper.doTrace(
-                mColObj, tracerDest, tracerDest + osg::Vec3f(0.0f, 0.0f, -downStepSize), mColWorld, onGround);
+                mColObj, tracerDest, tracerDest + osg::Vec3f(0.0f, 0.0f, -downStepSize), mColWorld, onGround, mActorFilter);
 
             // can't step down onto air, non-walkable-slopes, or actors
             // NOTE: using a capsule causes isWalkableSlope (used in canStepDown) to fail on certain geometry that were

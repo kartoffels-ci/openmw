@@ -1,6 +1,6 @@
 #include "actorconvexcallback.hpp"
+#include "actor.hpp"
 #include "collisiontype.hpp"
-#include "contacttestwrapper.h"
 
 #include <BulletCollision/CollisionDispatch/btCollisionObject.h>
 #include <components/misc/convert.hpp>
@@ -11,19 +11,26 @@ namespace MWPhysics
 {
     namespace
     {
-        struct ActorOverlapTester : public btCollisionWorld::ContactResultCallback
+        // Geometric cylinder-cylinder overlap test. Replaces the expensive contactPairTest
+        // which was the biggest per-actor cost in the solver.
+        bool actorsOverlap(const btCollisionObject* a, const btCollisionObject* b)
         {
-            bool mOverlapping = false;
+            auto* actorA = static_cast<const Actor*>(a->getUserPointer());
+            auto* actorB = static_cast<const Actor*>(b->getUserPointer());
+            const osg::Vec3f halfA = actorA->getHalfExtents();
+            const osg::Vec3f halfB = actorB->getHalfExtents();
+            const btVector3& originA = a->getWorldTransform().getOrigin();
+            const btVector3& originB = b->getWorldTransform().getOrigin();
+            const btVector3 delta = originA - originB;
 
-            btScalar addSingleResult(btManifoldPoint& cp, const btCollisionObjectWrapper* /*colObj0Wrap*/,
-                int /*partId0*/, int /*index0*/, const btCollisionObjectWrapper* /*colObj1Wrap*/, int /*partId1*/,
-                int /*index1*/) override
-            {
-                if (cp.getDistance() <= 0.0f)
-                    mOverlapping = true;
-                return 1;
-            }
-        };
+            if (std::abs(delta.z()) >= halfA.z() + halfB.z())
+                return false;
+
+            const float dx = delta.x();
+            const float dy = delta.y();
+            const float combinedRadius = halfA.x() + halfB.x();
+            return (dx * dx + dy * dy) < combinedRadius * combinedRadius;
+        }
     }
 
     btScalar ActorConvexCallback::addSingleResult(
@@ -38,14 +45,7 @@ namespace MWPhysics
         // it still helps a lot.
         if (convexResult.m_hitCollisionObject->getBroadphaseHandle()->m_collisionFilterGroup == CollisionType_Actor)
         {
-            ActorOverlapTester isOverlapping;
-            // FIXME: This is absolutely terrible and bullet should feel terrible for not making contactPairTest
-            // const-correct.
-            ContactTestWrapper::contactPairTest(const_cast<btCollisionWorld*>(mWorld),
-                const_cast<btCollisionObject*>(mMe), const_cast<btCollisionObject*>(convexResult.m_hitCollisionObject),
-                isOverlapping);
-
-            if (isOverlapping.mOverlapping)
+            if (actorsOverlap(mMe, convexResult.m_hitCollisionObject))
             {
                 auto originA = Misc::Convert::toOsg(mMe->getWorldTransform().getOrigin());
                 auto originB = Misc::Convert::toOsg(convexResult.m_hitCollisionObject->getWorldTransform().getOrigin());

@@ -104,6 +104,8 @@ namespace MWPhysics
         const bool mWaterCollision;
         const bool mSkipCollisionDetection;
         const bool mIsPlayer;
+        int mMaxIterations;
+        bool mSkipActorCollision;
     };
 
     struct ProjectileFrameData
@@ -139,6 +141,8 @@ namespace MWPhysics
                 return { { std::move(locked), std::ref(mData) } };
             return std::nullopt;
         }
+
+        FrameData& frameData() { return mData; }
 
     private:
         std::weak_ptr<Ptr> mPtr;

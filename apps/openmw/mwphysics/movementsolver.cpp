@@ -184,7 +184,8 @@ namespace MWPhysics
             velocity *= 1.f + fStromWalkMult * angleCos;
         }
 
-        Stepper stepper(collisionWorld, actor.mCollisionObject);
+        const bool actorFilter = actor.mSkipActorCollision;
+        Stepper stepper(collisionWorld, actor.mCollisionObject, actorFilter);
         osg::Vec3f origVelocity = velocity;
         osg::Vec3f newPosition = actor.mPosition;
         /*
@@ -199,7 +200,7 @@ namespace MWPhysics
         osg::Vec3f lastSlideNormalFallback(0, 0, 1);
         bool forceGroundTest = false;
 
-        for (int iterations = 0; iterations < sMaxIterations && remainingTime > 0.0001f; ++iterations)
+        for (int iterations = 0; iterations < actor.mMaxIterations && remainingTime > 0.0001f; ++iterations)
         {
             osg::Vec3f nextpos = newPosition + velocity * remainingTime;
             bool underwater = newPosition.z() < swimlevel;
@@ -216,7 +217,7 @@ namespace MWPhysics
             if ((newPosition - nextpos).length2() > 0.0001)
             {
                 // trace to where character would go if there were no obstructions
-                tracer.doTrace(actor.mCollisionObject, newPosition, nextpos, collisionWorld, actor.mIsOnGround);
+                tracer.doTrace(actor.mCollisionObject, newPosition, nextpos, collisionWorld, actor.mIsOnGround, actorFilter);
 
                 // check for obstructions
                 if (tracer.mFraction >= 1.0f)
@@ -327,7 +328,7 @@ namespace MWPhysics
                             auto averageNormal = bestNormal + origPlaneNormal;
                             averageNormal.normalize();
                             tracer.doTrace(actor.mCollisionObject, newPosition,
-                                newPosition + averageNormal * (sCollisionMargin * 2.0), collisionWorld);
+                                newPosition + averageNormal * (sCollisionMargin * 2.0), collisionWorld, false, actorFilter);
                             newPosition = (newPosition + tracer.mEndPos) / 2.0;
 
                             usedSeamLogic = true;
@@ -343,7 +344,7 @@ namespace MWPhysics
                 if (!usedSeamLogic)
                 {
                     tracer.doTrace(actor.mCollisionObject, newPosition,
-                        newPosition + planeNormal * (sCollisionMargin * 2.0), collisionWorld);
+                        newPosition + planeNormal * (sCollisionMargin * 2.0), collisionWorld, false, actorFilter);
                     newPosition = (newPosition + tracer.mEndPos) / 2.0;
                 }
 
@@ -382,7 +383,7 @@ namespace MWPhysics
             osg::Vec3f from = newPosition;
             auto dropDistance = 2 * sGroundOffset + (actor.mIsOnGround ? sStepSizeDown : 0);
             osg::Vec3f to = newPosition - osg::Vec3f(0, 0, dropDistance);
-            tracer.doTrace(actor.mCollisionObject, from, to, collisionWorld, actor.mIsOnGround);
+            tracer.doTrace(actor.mCollisionObject, from, to, collisionWorld, actor.mIsOnGround, actorFilter);
             if (tracer.mFraction < 1.0f)
             {
                 if (!isActor(tracer.mHitObject))
@@ -401,7 +402,7 @@ namespace MWPhysics
                         {
                             newPosition.z() = tracer.mEndPos.z();
                             tracer.doTrace(actor.mCollisionObject, newPosition,
-                                newPosition + osg::Vec3f(0, 0, 2 * sGroundOffset), collisionWorld);
+                                newPosition + osg::Vec3f(0, 0, 2 * sGroundOffset), collisionWorld, false, actorFilter);
                             newPosition = (newPosition + tracer.mEndPos) / 2.0;
                         }
                     }

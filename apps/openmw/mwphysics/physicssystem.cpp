@@ -46,6 +46,7 @@
 
 #include "actor.hpp"
 #include "collisiontype.hpp"
+#include "constants.hpp"
 
 #include "closestnotmerayresultcallback.hpp"
 #include "contacttestresultcallback.hpp"
@@ -646,6 +647,8 @@ namespace MWPhysics
         assert(simulations.empty());
         simulations.reserve(mActors.size() + mProjectiles.size());
         const MWBase::World* world = MWBase::Environment::get().getWorld();
+        const osg::Vec3f playerPos = world->getPlayerConstPtr().getRefData().getPosition().asVec3();
+
         for (const auto& [ref, physicActor] : mActors)
         {
             if (!physicActor->isActive())
@@ -680,6 +683,25 @@ namespace MWPhysics
 
             simulations.emplace_back(ActorSimulation{
                 physicActor, ActorFrameData{ *physicActor, inert, waterCollision, slowFall, waterlevel, isPlayer } });
+
+            // Reduce solver iterations and skip actor-actor collision for distant NPCs.
+            if (!isPlayer)
+            {
+                auto& actorSim = std::get<ActorSimulation>(simulations.back());
+                auto& frameData = actorSim.frameData();
+                const osg::Vec3f actorPos = ptr.getRefData().getPosition().asVec3();
+                const float dist2 = (actorPos - playerPos).length2();
+
+                if (dist2 > 3000.f * 3000.f)
+                {
+                    frameData.mMaxIterations = 1;
+                    frameData.mSkipActorCollision = true;
+                }
+                else if (dist2 > 1500.f * 1500.f)
+                    frameData.mMaxIterations = 1;
+                else if (dist2 > 800.f * 800.f)
+                    frameData.mMaxIterations = 2;
+            }
 
             // if the simulation will run, a jump request will be fulfilled. Update mechanics accordingly.
             if (willSimulate)
@@ -906,6 +928,8 @@ namespace MWPhysics
         , mWaterCollision(waterCollision)
         , mSkipCollisionDetection(!actor.getCollisionMode())
         , mIsPlayer(isPlayer)
+        , mMaxIterations(sMaxIterations)
+        , mSkipActorCollision(false)
     {
     }
 

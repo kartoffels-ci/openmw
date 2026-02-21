@@ -136,6 +136,9 @@ namespace MWPhysics
         osg::Timer_t mFrameStart;
 
         std::unique_ptr<WorkersSync> mWorkersSync;
+
+        osg::Vec3f mPlayerPos;
+        unsigned int mLOSStepCounter = 0;
     };
 
 }
