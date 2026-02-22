@@ -381,6 +381,12 @@ namespace MWMechanics
         std::optional<ActiveSpellParams> reflected;
         for (auto it = spellIt->mEffects.begin(); it != spellIt->mEffects.end();)
         {
+            if (it->mFlags & ESM::ActiveEffect::Flag_Remove && it->mTimeLeft <= 0.f
+                && spellIt->hasFlag(ESM::ActiveSpells::Flag_Temporary))
+            {
+                ++it;
+                continue;
+            }
             auto result = applyMagicEffect(ptr, caster, *spellIt, *it, duration, context.mPlayNonLooping);
             if (result.mType == MagicApplicationResult::Type::REFLECTED)
             {
@@ -490,10 +496,8 @@ namespace MWMechanics
             {
                 if (merge(found->mEffects, spell.mEffects))
                     return;
-                auto params = *found;
-                mSpells.erase(found);
-                for (const auto& effect : params.mEffects)
-                    onMagicEffectRemoved(ptr, params, effect);
+                for (auto& effect : found->mEffects)
+                    effect.mTimeLeft = 0.f;
             }
         }
         initParams(ptr, spell, context);

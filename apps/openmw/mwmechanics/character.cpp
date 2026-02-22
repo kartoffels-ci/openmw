@@ -1256,11 +1256,14 @@ namespace MWMechanics
         if (mAttackStrength == -1.f)
             mAttackStrength = std::min(1.f, 0.1f + Misc::Rng::rollClosedProbability(prng));
         ESM::WeaponType::Class weapclass = getWeaponType(mWeaponType)->mWeaponClass;
-        if (weapclass != ESM::WeaponType::Ranged && weapclass != ESM::WeaponType::Thrown)
+        if (weapclass != ESM::WeaponType::Ranged)
         {
-            mAttackSuccess = mPtr.getClass().evaluateHit(mPtr, mAttackVictim, mAttackHitPos);
-            if (!mAttackSuccess)
-                mAttackStrength = 0.f;
+            if (weapclass != ESM::WeaponType::Thrown)
+            {
+                mAttackSuccess = mPtr.getClass().evaluateHit(mPtr, mAttackVictim, mAttackHitPos);
+                if (!mAttackSuccess)
+                    mAttackStrength = 0.f;
+            }
             playSwishSound();
         }
 
@@ -1367,6 +1370,8 @@ namespace MWMechanics
 
         // If the current weapon type was changed in the middle of attack (e.g. by Equip console command or when bound
         // spell expires), we should force actor to the "weapon equipped" state, interrupt attack and update animations.
+        // Morrowind does this at the end of the attack (see #4646 and PR 1972).
+        // If we decide to cope with the resulting problems, the thrown weapon->H2H case below should be extended.
         if (isStillWeapon && mWeaponType != weaptype && mUpperBodyState > UpperBodyState::WeaponEquipped)
         {
             forcestateupdate = true;
@@ -1843,6 +1848,20 @@ namespace MWMechanics
 
                 if (animPlaying)
                     mAnimation->disable(mCurrentWeapon);
+
+                // Skip Thrown->H2H idle transition (e.g., if we've run out of ammo)
+                // In Morrowind this isn't actually specific to this transition
+                // See the weapon->weapon mid-attack skip logic above
+                if (mUpperBodyState == UpperBodyState::AttackEnd)
+                {
+                    if (weapclass == ESM::WeaponType::Thrown && weaptype == ESM::Weapon::HandToHand)
+                    {
+                        forcestateupdate = true;
+                        mWeaponType = weaptype;
+                        mCurrentWeapon = getWeaponAnimation(mWeaponType);
+                        mAnimation->showWeapons(false);
+                    }
+                }
 
                 mUpperBodyState = UpperBodyState::WeaponEquipped;
             }
