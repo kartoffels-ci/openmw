@@ -1,20 +1,22 @@
-name: Sync feature branches onto master
+name: Sync topic branches and rebuild merged
 
 on:
   workflow_dispatch:
 
-# Edit this list to control which branches auto-rebase onto master.
-# Branches not listed here (e.g. aggressive-3 through 5) stay local/manual.
+# Topic branches: each rebased independently onto master.
+# Merged branch: recreated from scratch by merging all topics.
 env:
-  SYNC_BRANCHES: >-
-    wip-aggressive-performance
-    wip-aggressive-performance-2
+  TOPIC_BRANCHES: >-
+    topic/msoc
+    topic/shadows
+    topic/physics
+  MERGED_BRANCH: wip-merged
 
 permissions:
   contents: write
 
 jobs:
-  rebase-branches:
+  sync-topics:
     runs-on: ubuntu-latest
 
     steps:
@@ -30,18 +32,17 @@ jobs:
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
 
-    - name: Rebase feature branches onto master
+    - name: Rebase topic branches onto master
       run: |
         failed=""
         succeeded=""
         skipped=""
 
-        for branch in $SYNC_BRANCHES; do
+        for branch in $TOPIC_BRANCHES; do
           echo "========================================="
           echo "Rebasing $branch onto master"
           echo "========================================="
 
-          # Skip if branch doesn't exist on remote
           if ! git rev-parse --verify "origin/$branch" >/dev/null 2>&1; then
             echo "  -> $branch not found on remote, skipping"
             skipped="$skipped\n  $branch"
@@ -65,7 +66,7 @@ jobs:
         done
 
         echo "========================================="
-        echo "SUMMARY"
+        echo "REBASE SUMMARY"
         echo "========================================="
         if [ -n "$succeeded" ]; then
           echo -e "Succeeded:$succeeded"
@@ -76,4 +77,38 @@ jobs:
         if [ -n "$failed" ]; then
           echo -e "Failed (conflicts):$failed"
           echo "::warning::Branches with rebase conflicts:$failed"
+        fi
+
+    - name: Rebuild merged branch
+      run: |
+        echo "========================================="
+        echo "Rebuilding $MERGED_BRANCH"
+        echo "========================================="
+
+        git checkout -B "$MERGED_BRANCH" origin/master
+
+        merge_failed=""
+        for branch in $TOPIC_BRANCHES; do
+          # Only merge topics that exist on remote
+          if ! git rev-parse --verify "origin/$branch" >/dev/null 2>&1; then
+            echo "  -> $branch not on remote, skipping merge"
+            continue
+          fi
+
+          echo "Merging $branch..."
+          if git merge --no-ff "origin/$branch" -m "Merge $branch"; then
+            echo "  -> merged $branch"
+          else
+            git merge --abort
+            echo "  -> CONFLICT merging $branch, aborting"
+            merge_failed="$merge_failed\n  $branch"
+          fi
+        done
+
+        if [ -n "$merge_failed" ]; then
+          echo "::warning::Failed to merge into $MERGED_BRANCH:$merge_failed"
+          echo -e "Merge failures:$merge_failed"
+        else
+          git push --force-with-lease origin "$MERGED_BRANCH"
+          echo "  -> $MERGED_BRANCH pushed"
         fi

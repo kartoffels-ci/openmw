@@ -63,7 +63,7 @@ jobs:
       build-type: RelWithDebInfo
 
   Release:
-    if: github.ref == 'refs/heads/wip-aggressive-performance-2'
+    if: github.ref == 'refs/heads/wip-merged'
     needs: [Ubuntu, Windows]
     runs-on: ubuntu-latest
     permissions:
