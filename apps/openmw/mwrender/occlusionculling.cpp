@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <queue>
+#include <unordered_set>
 
 #include <osg/BoundingBox>
 #include <osg/BoundingSphere>
@@ -177,12 +178,28 @@ namespace MWRender
                 mesh.vertices.push_back(cell.sum / static_cast<float>(cell.count));
             }
 
+            std::unordered_set<uint64_t> seen;
             for (size_t i = 0; i + 2 < cmv.mIndices.size(); i += 3)
             {
                 unsigned int a = cells[vertexRemap[cmv.mIndices[i]]].newIndex;
                 unsigned int b = cells[vertexRemap[cmv.mIndices[i + 1]]].newIndex;
                 unsigned int c = cells[vertexRemap[cmv.mIndices[i + 2]]].newIndex;
-                if (a != b && b != c && a != c)
+
+                // Reject degenerate triangles
+                if (a == b || b == c || a == c)
+                    continue;
+
+                // Canonical form: rotate min index to front, then ensure consistent order
+                unsigned int tri[3] = { a, b, c };
+                if (tri[1] < tri[0] && tri[1] < tri[2])
+                    std::rotate(tri, tri + 1, tri + 3);
+                else if (tri[2] < tri[0] && tri[2] < tri[1])
+                    std::rotate(tri, tri + 2, tri + 3);
+                if (tri[1] > tri[2])
+                    std::swap(tri[1], tri[2]);
+
+                uint64_t key = (uint64_t(tri[0]) << 42) | (uint64_t(tri[1]) << 21) | uint64_t(tri[2]);
+                if (seen.insert(key).second)
                 {
                     mesh.indices.push_back(a);
                     mesh.indices.push_back(b);
@@ -205,13 +222,22 @@ namespace MWRender
     }
 
     SceneOcclusionCallback::SceneOcclusionCallback(SceneUtil::OcclusionCuller* culler,
-        Terrain::TerrainOccluder* occluder, int radiusCells, bool enableTerrainOccluder, bool enableDebugOverlay)
+        Terrain::TerrainOccluder* occluder, int radiusCells, bool enableTerrainOccluder, bool enableDebugOverlay,
+        bool enableDebugMessages, bool enableInteriors)
         : mCuller(culler)
         , mTerrainOccluder(occluder)
         , mRadiusCells(radiusCells)
         , mEnableTerrainOccluder(enableTerrainOccluder)
         , mEnableDebugOverlay(enableDebugOverlay)
+        , mEnableDebugMessages(enableDebugMessages)
+        , mEnableInteriors(enableInteriors)
     {
+    }
+
+    void SceneOcclusionCallback::setCellType(bool isInterior, bool isQuasiExterior)
+    {
+        mIsInterior = isInterior;
+        mIsQuasiExterior = isQuasiExterior;
     }
 
     void SceneOcclusionCallback::setupDebugOverlay()
@@ -315,8 +341,8 @@ namespace MWRender
         }
         mLastFrameNumber = frameNumber;
 
-        // Skip if no terrain data (interiors)
-        if (!mTerrainOccluder->hasTerrainData())
+        // Skip MSOC entirely in interiors (unless enabled via setting)
+        if (mIsInterior && !mEnableInteriors)
         {
             traverse(node, cv);
             return;
@@ -325,8 +351,8 @@ namespace MWRender
         // Begin occlusion frame with camera matrices
         mCuller->beginFrame(cam->getViewMatrix(), cam->getProjectionMatrix());
 
-        // Build and rasterize terrain occluder mesh
-        if (mEnableTerrainOccluder)
+        // Build and rasterize terrain occluder mesh (skip for quasi-exteriors and interiors — no real terrain)
+        if (mEnableTerrainOccluder && !mIsQuasiExterior && !mIsInterior && mTerrainOccluder->hasTerrainData())
         {
             mPositions.clear();
             mIndices.clear();
@@ -347,24 +373,31 @@ namespace MWRender
             updateDebugOverlay(cv);
         }
 
-        static int frameCount = 0;
-        if (++frameCount % 300 == 0)
+        if (mEnableDebugMessages)
         {
-            const auto terrainTris = mIndices.size() / 3;
-            const auto bldgTris = mCuller->getNumBuildingTris();
-            const auto terrainVerts = mPositions.size();
-            const auto bldgVerts = mCuller->getNumBuildingVerts();
-            Log(Debug::Info) << "OcclusionCull: terrain tris=" << terrainTris << " terrain verts=" << terrainVerts
-                             << " bldg occluders=" << mCuller->getNumBuildingOccluders() << " bldg tris=" << bldgTris
-                             << " bldg verts=" << bldgVerts << " total tris=" << (terrainTris + bldgTris)
-                             << " total verts=" << (terrainVerts + bldgVerts) << " tested=" << mCuller->getNumTested()
-                             << " occluded=" << mCuller->getNumOccluded();
+            static int frameCount = 0;
+            if (++frameCount % 300 == 0)
+            {
+                const auto terrainTris = mIndices.size() / 3;
+                const auto bldgTris = mCuller->getNumBuildingTris();
+                const auto terrainVerts = mPositions.size();
+                const auto bldgVerts = mCuller->getNumBuildingVerts();
+                Log(Debug::Info) << "OcclusionCull: terrain tris=" << terrainTris << " terrain verts=" << terrainVerts
+                                 << " bldg occluders=" << mCuller->getNumBuildingOccluders()
+                                 << " bldg tris=" << bldgTris << " bldg verts=" << bldgVerts
+                                 << " total tris=" << (terrainTris + bldgTris)
+                                 << " total verts=" << (terrainVerts + bldgVerts)
+                                 << " tested=" << mCuller->getNumTested()
+                                 << " occluded=" << mCuller->getNumOccluded();
+            }
         }
     }
 
-    PagedOccluderCallback::PagedOccluderCallback(SceneUtil::OcclusionCuller* culler, float maxDistance)
+    PagedOccluderCallback::PagedOccluderCallback(
+        SceneUtil::OcclusionCuller* culler, float maxDistance, unsigned int maxTriangles)
         : mCuller(culler)
         , mMaxDistanceSq(maxDistance * maxDistance)
+        , mMaxTriangles(maxTriangles)
     {
     }
 
@@ -412,8 +445,12 @@ namespace MWRender
                             if ((center - eyeWorld).length2() > mMaxDistanceSq)
                                 continue;
 
+                            unsigned int newTris = static_cast<unsigned int>(occMesh.indices.size() / 3);
+                            if (mMaxTriangles > 0 && mCuller->getNumBuildingTris() + newTris > mMaxTriangles)
+                                continue;
+
                             mCuller->rasterizeOccluder(occMesh.vertices, occMesh.indices);
-                            mCuller->incrementBuildingOccluders(static_cast<unsigned int>(occMesh.indices.size() / 3),
+                            mCuller->incrementBuildingOccluders(newTris,
                                 static_cast<unsigned int>(occMesh.vertices.size()));
                         }
                         break;
@@ -427,7 +464,8 @@ namespace MWRender
 
     CellOcclusionCallback::CellOcclusionCallback(SceneUtil::OcclusionCuller* culler, float occluderMinRadius,
         float occluderMaxRadius, float occluderShrinkFactor, int occluderMeshResolution, int occluderMaxMeshResolution,
-        float occluderInsideThreshold, float occluderMaxDistance, bool enableStaticOccluders)
+        float occluderInsideThreshold, float occluderMaxDistance, bool enableStaticOccluders,
+        unsigned int maxTriangles)
         : mCuller(culler)
         , mOccluderMinRadius(occluderMinRadius)
         , mOccluderMaxRadius(occluderMaxRadius)
@@ -437,6 +475,7 @@ namespace MWRender
         , mOccluderInsideThreshold(occluderInsideThreshold)
         , mOccluderMaxDistanceSq(occluderMaxDistance * occluderMaxDistance)
         , mEnableStaticOccluders(enableStaticOccluders)
+        , mMaxTriangles(maxTriangles)
     {
     }
 
@@ -458,12 +497,12 @@ namespace MWRender
 
         if (mesh.indices.empty() && !mesh.aabb.valid())
         {
-            Log(Debug::Info) << "OccMesh cached (no triangles): \"" << node->getName() << "\"";
+            Log(Debug::Verbose) << "OccMesh cached (no triangles): \"" << node->getName() << "\"";
         }
         else
         {
-            Log(Debug::Info) << "OccMesh cached: \"" << node->getName() << "\" verts=" << mesh.vertices.size()
-                             << " tris=" << (mesh.indices.size() / 3) << " sphere=" << node->getBound().radius();
+            Log(Debug::Verbose) << "OccMesh cached: \"" << node->getName() << "\" verts=" << mesh.vertices.size()
+                                << " tris=" << (mesh.indices.size() / 3) << " sphere=" << node->getBound().radius();
         }
 
         return mMeshCache.emplace(node, std::move(mesh)).first->second;
@@ -514,13 +553,17 @@ namespace MWRender
                             {
                                 for (const auto& occMesh : pod->mOccluderMeshes)
                                 {
-                                    if (!occMesh.indices.empty())
-                                    {
-                                        mCuller->rasterizeOccluder(occMesh.vertices, occMesh.indices);
-                                        mCuller->incrementBuildingOccluders(
-                                            static_cast<unsigned int>(occMesh.indices.size() / 3),
-                                            static_cast<unsigned int>(occMesh.vertices.size()));
-                                    }
+                                    if (occMesh.indices.empty())
+                                        continue;
+
+                                    unsigned int newTris = static_cast<unsigned int>(occMesh.indices.size() / 3);
+                                    if (mMaxTriangles > 0
+                                        && mCuller->getNumBuildingTris() + newTris > mMaxTriangles)
+                                        continue;
+
+                                    mCuller->rasterizeOccluder(occMesh.vertices, occMesh.indices);
+                                    mCuller->incrementBuildingOccluders(
+                                        newTris, static_cast<unsigned int>(occMesh.vertices.size()));
                                 }
                                 break; // Only one PagedOccluderData per chunk
                             }
@@ -560,9 +603,14 @@ namespace MWRender
                         scaledBB.expandBy(center + halfExtent);
                         if (!scaledBB.contains(cv->getEyePoint()))
                         {
-                            mCuller->rasterizeOccluder(mesh.vertices, mesh.indices);
-                            mCuller->incrementBuildingOccluders(static_cast<unsigned int>(mesh.indices.size() / 3),
-                                static_cast<unsigned int>(mesh.vertices.size()));
+                            unsigned int newTris = static_cast<unsigned int>(mesh.indices.size() / 3);
+                            if (mMaxTriangles == 0
+                                || mCuller->getNumBuildingTris() + newTris <= mMaxTriangles)
+                            {
+                                mCuller->rasterizeOccluder(mesh.vertices, mesh.indices);
+                                mCuller->incrementBuildingOccluders(
+                                    newTris, static_cast<unsigned int>(mesh.vertices.size()));
+                            }
                         }
                     }
                 }

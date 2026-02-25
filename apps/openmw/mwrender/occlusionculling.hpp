@@ -80,9 +80,12 @@ namespace MWRender
     {
     public:
         SceneOcclusionCallback(SceneUtil::OcclusionCuller* culler, Terrain::TerrainOccluder* occluder, int radiusCells,
-            bool enableTerrainOccluder, bool enableDebugOverlay);
+            bool enableTerrainOccluder, bool enableDebugOverlay, bool enableDebugMessages, bool enableInteriors);
 
         void operator()(osg::Node* node, osgUtil::CullVisitor* cv);
+
+        /// Update cell type flags. Call when the player transitions cells.
+        void setCellType(bool isInterior, bool isQuasiExterior);
 
     private:
         void setupDebugOverlay();
@@ -93,6 +96,10 @@ namespace MWRender
         int mRadiusCells;
         bool mEnableTerrainOccluder;
         bool mEnableDebugOverlay;
+        bool mEnableDebugMessages;
+        bool mEnableInteriors;
+        bool mIsInterior = false;
+        bool mIsQuasiExterior = false;
         unsigned int mLastFrameNumber = 0;
 
         // Scratch buffers reused across frames
@@ -113,13 +120,14 @@ namespace MWRender
         : public SceneUtil::NodeCallback<PagedOccluderCallback, osg::Node*, osgUtil::CullVisitor*>
     {
     public:
-        PagedOccluderCallback(SceneUtil::OcclusionCuller* culler, float maxDistance);
+        PagedOccluderCallback(SceneUtil::OcclusionCuller* culler, float maxDistance, unsigned int maxTriangles);
 
         void operator()(osg::Node* node, osgUtil::CullVisitor* cv);
 
     private:
         osg::ref_ptr<SceneUtil::OcclusionCuller> mCuller;
         float mMaxDistanceSq;
+        unsigned int mMaxTriangles;
     };
 
     /// Installed on each Cell Root group. Two-pass approach:
@@ -132,7 +140,8 @@ namespace MWRender
     public:
         CellOcclusionCallback(SceneUtil::OcclusionCuller* culler, float occluderMinRadius, float occluderMaxRadius,
             float occluderShrinkFactor, int occluderMeshResolution, int occluderMaxMeshResolution,
-            float occluderInsideThreshold, float occluderMaxDistance, bool enableStaticOccluders);
+            float occluderInsideThreshold, float occluderMaxDistance, bool enableStaticOccluders,
+            unsigned int maxTriangles);
 
         void operator()(osg::Group* node, osgUtil::CullVisitor* cv);
 
@@ -149,6 +158,7 @@ namespace MWRender
         float mOccluderInsideThreshold;
         float mOccluderMaxDistanceSq;
         bool mEnableStaticOccluders;
+        unsigned int mMaxTriangles;
 
         std::unordered_map<osg::Node*, OccluderMesh> mMeshCache;
     };

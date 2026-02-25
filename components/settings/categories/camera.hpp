@@ -53,6 +53,10 @@ namespace Settings
         SettingValue<float> mOcclusionOccluderMaxDistance{ mIndex, "Camera", "occlusion occluder max distance",
             makeClampSanitizerFloat(1000.0f, 100000.0f) };
         SettingValue<bool> mOcclusionDebugOverlay{ mIndex, "Camera", "occlusion debug overlay" };
+        SettingValue<bool> mOcclusionDebugMessages{ mIndex, "Camera", "occlusion debug messages" };
+        SettingValue<bool> mOcclusionCullingInteriors{ mIndex, "Camera", "occlusion culling interiors" };
+        SettingValue<int> mOcclusionMaxTriangles{ mIndex, "Camera", "occlusion max triangles",
+            makeClampSanitizerInt(0, 500000) };
     };
 }
 
