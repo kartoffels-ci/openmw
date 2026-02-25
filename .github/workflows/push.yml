@@ -62,9 +62,14 @@ jobs:
       vcpkg-deps-tag: "2026-01-20"
       build-type: RelWithDebInfo
 
+  macOS:
+    uses: ./.github/workflows/macos.yml
+    with:
+      build-type: RelWithDebInfo
+
   Release:
     if: github.ref == 'refs/heads/wip-merged'
-    needs: [Ubuntu, Windows]
+    needs: [Ubuntu, Windows, macOS]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -87,3 +92,4 @@ jobs:
         files: |
           artifacts/**/*.zip
           artifacts/**/*.tar.gz
+          artifacts/**/*.dmg
