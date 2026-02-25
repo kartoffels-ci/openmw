@@ -25,7 +25,7 @@ Terrain and building meshes are rasterized into a low-resolution CPU depth buffe
 
 https://github.com/user-attachments/assets/85aeebc1-a40c-4581-b69f-7c362f1a263b
 
-Recommended settings:
+Default settings:
 ```ini
 [Camera]
 occlusion culling = true
@@ -42,13 +42,25 @@ occlusion occluder mesh resolution = 7
 occlusion occluder max mesh resolution = 24
 occlusion occluder inside threshold = 1.0
 occlusion occluder max distance = 6144
-occlusion debug overlay = true
+occlusion debug overlay = false
+occlusion culling interiors = false
+occlusion debug overlay = false
+occlusion debug messages = false
+occlusion max triangles = 30000
 ```
+
+Debugging settings:
+```ini
+[Camera]
+occlusion debug overlay = true
+occlusion culling interiors = true
+occlusion debug messages = true
+```
+
 
 ### Known Issues
 
 - **Shadow casters culled too early** — If a building is occluded but would normally cast a visible shadow, that shadow disappears. Rarely noticeable in practice. Workarounds: disable shadows, use soft shadows, or use higher resolution shadows.
-- **Mournhold terrain** — The terrain LOD in Mournhold renders as an invisible ceiling that breaks occlusion. Workaround: `occlusion culling terrain = false`
 
 ---
 
