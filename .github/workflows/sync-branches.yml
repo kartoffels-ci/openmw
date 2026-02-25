@@ -1,16 +1,13 @@
-name: Sync topic branches and rebuild merged
+name: Sync Topics
 
 on:
   workflow_dispatch:
 
-# Topic branches: each rebased independently onto master.
-# Merged branch: recreated from scratch by merging all topics.
 env:
   TOPIC_BRANCHES: >-
     topic/msoc
     topic/shadows
     topic/physics
-  MERGED_BRANCH: wip-merged
 
 permissions:
   contents: write
@@ -66,7 +63,7 @@ jobs:
         done
 
         echo "========================================="
-        echo "REBASE SUMMARY"
+        echo "SUMMARY"
         echo "========================================="
         if [ -n "$succeeded" ]; then
           echo -e "Succeeded:$succeeded"
@@ -77,38 +74,4 @@ jobs:
         if [ -n "$failed" ]; then
           echo -e "Failed (conflicts):$failed"
           echo "::warning::Branches with rebase conflicts:$failed"
-        fi
-
-    - name: Rebuild merged branch
-      run: |
-        echo "========================================="
-        echo "Rebuilding $MERGED_BRANCH"
-        echo "========================================="
-
-        git checkout -B "$MERGED_BRANCH" origin/master
-
-        merge_failed=""
-        for branch in $TOPIC_BRANCHES; do
-          # Only merge topics that exist on remote
-          if ! git rev-parse --verify "origin/$branch" >/dev/null 2>&1; then
-            echo "  -> $branch not on remote, skipping merge"
-            continue
-          fi
-
-          echo "Merging $branch..."
-          if git merge --no-ff "origin/$branch" -m "Merge $branch"; then
-            echo "  -> merged $branch"
-          else
-            git merge --abort
-            echo "  -> CONFLICT merging $branch, aborting"
-            merge_failed="$merge_failed\n  $branch"
-          fi
-        done
-
-        if [ -n "$merge_failed" ]; then
-          echo "::warning::Failed to merge into $MERGED_BRANCH:$merge_failed"
-          echo -e "Merge failures:$merge_failed"
-        else
-          git push --force-with-lease origin "$MERGED_BRANCH"
-          echo "  -> $MERGED_BRANCH pushed"
         fi
