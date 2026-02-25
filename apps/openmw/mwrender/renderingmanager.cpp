@@ -516,8 +516,13 @@ namespace MWRender
             const int radius = Settings::camera().mOcclusionTerrainRadius;
             const bool enableTerrain = Settings::camera().mOcclusionCullingTerrain;
             const bool debugOverlay = Settings::camera().mOcclusionDebugOverlay;
-            sceneRoot->addCullCallback(new SceneOcclusionCallback(
-                mOcclusionCuller, mTerrainOccluder.get(), radius, enableTerrain, debugOverlay));
+            const bool debugMessages = Settings::camera().mOcclusionDebugMessages;
+            const bool enableInteriors = Settings::camera().mOcclusionCullingInteriors;
+            const unsigned int maxTriangles = static_cast<unsigned int>(Settings::camera().mOcclusionMaxTriangles);
+            mSceneOcclusionCallback = new SceneOcclusionCallback(
+                mOcclusionCuller, mTerrainOccluder.get(), radius, enableTerrain, debugOverlay, debugMessages,
+                enableInteriors);
+            sceneRoot->addCullCallback(mSceneOcclusionCallback);
 
             const float occluderMinRadius = Settings::camera().mOcclusionOccluderMinRadius;
             const float occluderMaxRadius = Settings::camera().mOcclusionOccluderMaxRadius;
@@ -528,9 +533,10 @@ namespace MWRender
             const float occluderMaxDistance = Settings::camera().mOcclusionOccluderMaxDistance;
             const bool enableStatics = Settings::camera().mOcclusionCullingStatics;
             mObjects->setOcclusionCuller(mOcclusionCuller, occluderMinRadius, occluderMaxRadius, occluderShrinkFactor,
-                occluderMeshRes, occluderMaxMeshRes, occluderInsideThreshold, occluderMaxDistance, enableStatics);
+                occluderMeshRes, occluderMaxMeshRes, occluderInsideThreshold, occluderMaxDistance, enableStatics,
+                maxTriangles);
             if (mObjectPaging)
-                mObjectPaging->setOcclusionCuller(mOcclusionCuller);
+                mObjectPaging->setOcclusionCuller(mOcclusionCuller, maxTriangles);
         }
 
         mStateUpdater = new StateUpdater;
@@ -815,6 +821,13 @@ namespace MWRender
         {
             enableTerrain(true, store->getCell()->getWorldSpace());
             mTerrain->loadCell(store->getCell()->getGridX(), store->getCell()->getGridY());
+        }
+
+        if (mSceneOcclusionCallback)
+        {
+            const bool isInterior = !store->getCell()->isExterior() && !store->getCell()->isQuasiExterior();
+            const bool isQuasiExterior = store->getCell()->isQuasiExterior();
+            mSceneOcclusionCallback->setCellType(isInterior, isQuasiExterior);
         }
     }
     void RenderingManager::removeCell(const MWWorld::CellStore* store)

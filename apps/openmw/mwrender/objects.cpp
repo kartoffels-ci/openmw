@@ -54,7 +54,7 @@ namespace MWRender
             if (mOcclusionCuller)
                 cellnode->addCullCallback(new CellOcclusionCallback(mOcclusionCuller, mOccluderMinRadius,
                     mOccluderMaxRadius, mOccluderShrinkFactor, mOccluderMeshResolution, mOccluderMaxMeshResolution,
-                    mOccluderInsideThreshold, mOccluderMaxDistance, mEnableStaticOccluders));
+                    mOccluderInsideThreshold, mOccluderMaxDistance, mEnableStaticOccluders, mMaxTriangles));
             mRootNode->addChild(cellnode);
             mCellSceneNodes[ptr.getCell()] = cellnode;
         }
@@ -221,7 +221,7 @@ namespace MWRender
             if (mOcclusionCuller)
                 cellnode->addCullCallback(new CellOcclusionCallback(mOcclusionCuller, mOccluderMinRadius,
                     mOccluderMaxRadius, mOccluderShrinkFactor, mOccluderMeshResolution, mOccluderMaxMeshResolution,
-                    mOccluderInsideThreshold, mOccluderMaxDistance, mEnableStaticOccluders));
+                    mOccluderInsideThreshold, mOccluderMaxDistance, mEnableStaticOccluders, mMaxTriangles));
             mRootNode->addChild(cellnode);
             mCellSceneNodes[newCell] = cellnode;
         }
@@ -267,7 +267,8 @@ namespace MWRender
 
     void Objects::setOcclusionCuller(SceneUtil::OcclusionCuller* culler, float occluderMinRadius,
         float occluderMaxRadius, float occluderShrinkFactor, int occluderMeshResolution, int occluderMaxMeshResolution,
-        float occluderInsideThreshold, float occluderMaxDistance, bool enableStaticOccluders)
+        float occluderInsideThreshold, float occluderMaxDistance, bool enableStaticOccluders,
+        unsigned int maxTriangles)
     {
         mOcclusionCuller = culler;
         mOccluderMinRadius = occluderMinRadius;
@@ -278,6 +279,7 @@ namespace MWRender
         mOccluderInsideThreshold = occluderInsideThreshold;
         mOccluderMaxDistance = occluderMaxDistance;
         mEnableStaticOccluders = enableStaticOccluders;
+        mMaxTriangles = maxTriangles;
     }
 
 }

@@ -92,7 +92,8 @@ namespace MWRender
 
         void setOcclusionCuller(SceneUtil::OcclusionCuller* culler, float occluderMinRadius, float occluderMaxRadius,
             float occluderShrinkFactor, int occluderMeshResolution, int occluderMaxMeshResolution,
-            float occluderInsideThreshold, float occluderMaxDistance, bool enableStaticOccluders);
+            float occluderInsideThreshold, float occluderMaxDistance, bool enableStaticOccluders,
+            unsigned int maxTriangles);
 
     private:
         SceneUtil::OcclusionCuller* mOcclusionCuller = nullptr;
@@ -104,6 +105,7 @@ namespace MWRender
         float mOccluderInsideThreshold = 1.0f;
         float mOccluderMaxDistance = 6144.0f;
         bool mEnableStaticOccluders = true;
+        unsigned int mMaxTriangles = 30000;
 
         void operator=(const Objects&);
         Objects(const Objects&);
