@@ -7,7 +7,6 @@ env:
   TOPIC_BRANCHES: >-
     topic/msoc
     topic/shadows
-    topic/physics
   MERGED_BRANCH: wip-merged
 
 permissions:
