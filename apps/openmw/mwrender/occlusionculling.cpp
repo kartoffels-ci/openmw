@@ -5,6 +5,7 @@
 #include <queue>
 #include <unordered_set>
 
+#include <osg/AlphaFunc>
 #include <osg/BoundingBox>
 #include <osg/BoundingSphere>
 #include <osg/Camera>
@@ -47,6 +48,13 @@ namespace
             if (!geom)
                 return;
 
+            // Skip alpha-tested drawables (e.g. tree leaf billboards) —
+            // their transparent regions would cause false occlusion.
+            // NIF loader applies AlphaFunc to the parent Group, not the Geometry itself,
+            // so check both the drawable and its immediate parent.
+            if (hasAlphaTest(drawable))
+                return;
+
             const auto* verts = dynamic_cast<const osg::Vec3Array*>(geom->getVertexArray());
             if (!verts || verts->empty())
                 return;
@@ -67,6 +75,18 @@ namespace
         std::vector<unsigned int> mIndices;
 
     private:
+        static bool hasAlphaTest(const osg::Node& node)
+        {
+            if (const auto* ss = node.getStateSet())
+                if (ss->getAttribute(osg::StateAttribute::ALPHAFUNC))
+                    return true;
+            for (const auto* parent : node.getParents())
+                if (const auto* ss = parent->getStateSet())
+                    if (ss->getAttribute(osg::StateAttribute::ALPHAFUNC))
+                        return true;
+            return false;
+        }
+
         void collectTriangles(const osg::PrimitiveSet* pset, unsigned int baseVertex)
         {
             unsigned int count = pset->getNumIndices();
@@ -364,6 +384,11 @@ namespace MWRender
 
         // Continue normal cull traversal — CellOcclusionCallbacks will test against the buffer
         traverse(node, cv);
+
+        // End the occlusion frame so sub-camera traversals (water reflection/refraction,
+        // shadow cameras) that share this scene graph don't incorrectly cull against
+        // the main camera's occlusion buffer.
+        mCuller->endFrame();
 
         // Update debug overlay AFTER traversal (terrain + building occluders now in buffer)
         if (mEnableDebugOverlay)
