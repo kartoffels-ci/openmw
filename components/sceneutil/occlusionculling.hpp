@@ -36,6 +36,7 @@ namespace SceneUtil
 
         bool isActive() const { return mMOC != nullptr; }
         bool isFrameActive() const { return mFrameActive; }
+        void endFrame() { mFrameActive = false; }
 
         unsigned int getNumOccluded() const { return mNumOccluded; }
         unsigned int getNumTested() const { return mNumTested; }
