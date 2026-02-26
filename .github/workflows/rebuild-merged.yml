@@ -1,0 +1,59 @@
+name: Rebuild Merged
+
+on:
+  workflow_dispatch:
+
+env:
+  TOPIC_BRANCHES: >-
+    topic/msoc
+    topic/shadows
+  MERGED_BRANCH: wip-merged
+
+permissions:
+  contents: write
+
+jobs:
+  rebuild-merged:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Fetch all remote branches
+      run: git fetch origin
+
+    - name: Configure git
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
+    - name: Rebuild merged branch
+      run: |
+        git checkout -B "$MERGED_BRANCH" origin/master
+
+        merge_failed=""
+        for branch in $TOPIC_BRANCHES; do
+          if ! git rev-parse --verify "origin/$branch" >/dev/null 2>&1; then
+            echo "  -> $branch not on remote, skipping"
+            continue
+          fi
+
+          echo "Merging $branch..."
+          if git merge --no-ff "origin/$branch" -m "Merge $branch"; then
+            echo "  -> merged $branch"
+          else
+            git merge --abort
+            echo "  -> CONFLICT merging $branch, aborting"
+            merge_failed="$merge_failed\n  $branch"
+          fi
+        done
+
+        if [ -n "$merge_failed" ]; then
+          echo "::warning::Failed to merge into $MERGED_BRANCH:$merge_failed"
+          echo -e "Merge failures:$merge_failed"
+        else
+          git push --force-with-lease origin "$MERGED_BRANCH"
+          echo "  -> $MERGED_BRANCH pushed"
+        fi

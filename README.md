@@ -1,3 +1,124 @@
+Aggressive Performance
+======
+
+Experimental optimizations for OpenMW that reduce CPU-side bottlenecks. Works best in dense cities like Narsis and Old Ebonheart.
+
+---
+
+## Software Occlusion Culling (Intel Masked Occlusion Culling)
+
+Terrain and building meshes are rasterized into a low-resolution CPU depth buffer during cull traversal. Objects whose screen-space AABB is fully behind the depth buffer are rejected before reaching the draw thread, saving draw calls for hidden geometry.
+
+## No culling, No in cell paging:
+<img width="2175" height="1209" alt="image" src="https://github.com/user-attachments/assets/c1c6ec57-eedb-4ea0-9b8c-74b8897adb65" />
+
+## Culling:
+<img width="2175" height="1209" alt="image" src="https://github.com/user-attachments/assets/31c96d5e-94b6-4628-9296-64107f6b1a24" />
+
+## In Cell Paging (already in OpenMW, you just have to turn it on):
+<img width="2175" height="1209" alt="image" src="https://github.com/user-attachments/assets/b2891825-00af-4abe-9786-411a0be34449" />
+
+## Culling and Paging (best of both worlds):
+<img width="2175" height="1209" alt="image" src="https://github.com/user-attachments/assets/4ebfd644-df5a-43a1-9db0-075887760bcf" />
+
+## Example of walking through a tunnel in Vivec. Notice the occlusion doesn't make the banner disappear.
+
+https://github.com/user-attachments/assets/85aeebc1-a40c-4581-b69f-7c362f1a263b
+
+Default settings:
+```ini
+[Camera]
+occlusion culling = true
+occlusion culling terrain = true
+occlusion culling statics = true
+occlusion buffer width = 512
+occlusion buffer height = 256
+occlusion terrain lod = 3
+occlusion terrain radius = 2
+occlusion occluder min radius = 300
+occlusion occluder max radius = 5000
+occlusion occluder shrink factor = 1
+occlusion occluder mesh resolution = 7
+occlusion occluder max mesh resolution = 24
+occlusion occluder inside threshold = 1.0
+occlusion occluder max distance = 6144
+occlusion debug overlay = false
+occlusion culling interiors = false
+occlusion debug overlay = false
+occlusion debug messages = false
+occlusion max triangles = 30000
+```
+
+Debugging settings:
+```ini
+[Camera]
+occlusion debug overlay = true
+occlusion culling interiors = true
+occlusion debug messages = true
+```
+
+
+### Known Issues
+
+- **Shadow casters culled too early** — If a building is occluded but would normally cast a visible shadow, that shadow disappears. Rarely noticeable in practice. Workarounds: disable shadows, use soft shadows, or use higher resolution shadows.
+
+---
+
+## Shadow Temporal Reuse
+
+Skips shadow cascade cull traversals on non-update frames while reusing the previous shadow map FBO textures. Only the shadow-space matrices are recomputed each frame so shadows track the moving camera.
+
+**Setting:** `[Shadows] shadow update interval` (default `1` = off, max `4`)
+
+```
+interval=1 (off):
+  Frame 1: [main cull][shadow cull x3][CLSB] → draw
+  Frame 2: [main cull][shadow cull x3][CLSB] → draw
+
+interval=2:
+  Frame 1: [main cull][shadow cull x3][CLSB] → draw   ← full update
+  Frame 2: [main cull]                       → draw   ← reuse FBOs
+
+interval=3:
+  Frame 1: [main cull][shadow cull x3][CLSB] → draw   ← full update
+  Frame 2: [main cull]                       → draw   ← reuse
+  Frame 3: [main cull]                       → draw   ← reuse
+
+interval=4:
+  Frame 1: [main cull][shadow cull x3][CLSB] → draw   ← full update
+  Frame 2: [main cull]                       → draw   ← reuse
+  Frame 3: [main cull]                       → draw   ← reuse
+  Frame 4: [main cull]                       → draw   ← reuse
+```
+
+### Recommended Settings
+
+```ini
+[Shadows]
+shadow update interval = 2
+```
+
+### Known Issues
+
+- **FPS jitter** — Average FPS increases but alternates between update and reuse frames (e.g. 60-70 instead of a steady 40-45). Use a framerate cap if this is distracting.
+- **Lagging NPC shadows** — At interval 2 this is negligible. At interval 4, NPC shadows visibly trail their owners. Use 4 only with NPC shadows disabled — it works well for terrain and statics, whose shadows only shift with time-of-day.
+- **Shadow glitches** — Occasional brief visual artifacts on shadows during reuse frames.
+
+---
+
+The two systems are independent: occlusion culling saves draw calls by rejecting hidden objects, shadow reuse saves CPU cull traversals by skipping shadow cascade walks.
+
+### Additional Performance Settings
+
+```ini
+[Terrain]
+distant terrain = true
+object paging = true
+object paging active grid = true
+```
+
+---
+
 OpenMW
 ======
 

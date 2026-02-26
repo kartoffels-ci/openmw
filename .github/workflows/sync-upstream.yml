@@ -1,0 +1,29 @@
+name: Sync Upstream
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: master
+        fetch-depth: 0
+
+    - name: Configure git
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
+    - name: Merge upstream master
+      run: |
+        git remote add upstream https://github.com/OpenMW/openmw.git
+        git fetch upstream master
+        git merge upstream/master -m "Merge upstream/master"
+        git push origin master
