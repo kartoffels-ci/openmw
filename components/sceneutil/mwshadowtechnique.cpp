@@ -19,6 +19,8 @@
 
 #include "mwshadowtechnique.hpp"
 
+#include <components/state/material.hpp>
+
 #include <osgShadow/ShadowedScene>
 #include <osg/CullFace>
 #include <osg/Geometry>
@@ -922,14 +924,15 @@ void SceneUtil::MWShadowTechnique::setupCastingShader(Shader::ShaderManager & sh
 {
     // This can't be part of the constructor as OSG mandates that there be a trivial constructor available
 
-    osg::ref_ptr<osg::Shader> castingVertexShader = shaderManager.getShader("shadowcasting.vert", {{"legacyBindings", "0",}, {"useOVR_multiview", "0"}});
+    std::string legacyBindings = State::Material::getBindlessEnabled() ? "0" : "1";
+    osg::ref_ptr<osg::Shader> castingVertexShader = shaderManager.getShader("shadowcasting.vert", {{"legacyBindings", legacyBindings,}, {"useOVR_multiview", "0"}});
     std::string useGPUShader4 = SceneUtil::getGLExtensions().isGpuShader4Supported ? "1" : "0";
     for (int alphaFunc = GL_NEVER; alphaFunc <= GL_ALWAYS; ++alphaFunc)
     {
         osg::ref_ptr<osg::Shader> castingFragmentShader = shaderManager.getShader("shadowcasting.frag", { {"alphaFunc", std::to_string(alphaFunc)},
                                                                                     {"alphaToCoverage", "0"},
                                                                                     {"adjustCoverage", "1"},
-                                                                                    {"legacyBindings", "0"},
+                                                                                    {"legacyBindings", legacyBindings},
                                                                                     {"useOVR_multiview", "0"},
                                                                                     {"waterRefraction", "0"},
                                                                                     {"skyBlending", "0"},

@@ -4,6 +4,7 @@
 @link "lib/core/fragment.glsl" if !@useOVR_multiview
 @link "lib/core/fragment_multiview.glsl" if @useOVR_multiview
 @link "lib/core/fragment_bindless.glsl" if !@legacyBindings
+@link "lib/core/fragment_legacy.glsl" if @legacyBindings
 
 #include "lib/material/material.glsl"
 

@@ -28,51 +28,50 @@ namespace State
 
     void Material::apply(osg::State& state) const
     {
-        // TODO: change based on legacy bit set
-        if (true)
-        {
+        if (sBindless)
             return;
+
+        osg::ref_ptr<osg::Material> m = new osg::Material;
+        m->setAmbient(osg::Material::FRONT_AND_BACK, mAmbient);
+        m->setDiffuse(osg::Material::FRONT_AND_BACK, mDiffuse);
+        m->setSpecular(osg::Material::FRONT_AND_BACK, mSpecular);
+        m->setEmission(osg::Material::FRONT_AND_BACK, mEmission);
+        m->setShininess(osg::Material::FRONT_AND_BACK, mShininess);
+        m->setAlpha(osg::Material::FRONT_AND_BACK, mAlpha);
+
+        osg::Material::ColorMode mode = osg::Material::OFF;
+
+        switch (static_cast<int>(mColorMode))
+        {
+            case 0:
+                mode = osg::Material::OFF;
+                break;
+            case 1:
+                mode = osg::Material::EMISSION;
+                break;
+            default:
+            case 2:
+                mode = osg::Material::AMBIENT_AND_DIFFUSE;
+                break;
+            case 3:
+                mode = osg::Material::AMBIENT;
+                break;
+            case 4:
+                mode = osg::Material::DIFFUSE;
+                break;
+            case 5:
+                mode = osg::Material::SPECULAR;
+                break;
         }
 
-        // osg::ref_ptr<osg::Material> m = new osg::Material;
-        // m->setAmbient(osg::Material::FRONT_AND_BACK, mAmbient);
-        // m->setDiffuse(osg::Material::FRONT_AND_BACK, mDiffuse);
-        // m->setEmission(osg::Material::FRONT_AND_BACK, mEmission);
-        // m->setShininess(osg::Material::FRONT_AND_BACK, mShininess);
-        // m->setAlpha(osg::Material::FRONT_AND_BACK, mAlpha);
-
-        // osg::Material::ColorMode mode = osg::Material::OFF;
-
-        // switch (mColorMode)
-        // {
-        //     case 0:
-        //         mode = osg::Material::OFF;
-        //         break;
-        //     case 1:
-        //         mode = osg::Material::EMISSION;
-        //         break;
-        //     default:
-        //     case 2:
-        //         mode = osg::Material::AMBIENT_AND_DIFFUSE;
-        //         break;
-        //     case 3:
-        //         mode = osg::Material::AMBIENT;
-        //         break;
-        //     case 4:
-        //         mode = osg::Material::DIFFUSE;
-        //         break;
-        //     case 5:
-        //         mode = osg::Material::SPECULAR;
-        //         break;
-        // }
-
-        // m->setColorMode(mode);
-        // m->apply(state);
+        m->setColorMode(mode);
+        m->apply(state);
     }
 
     int Material::compare(const StateAttribute& sa) const
     {
-        return 0;
+        if (sBindless)
+            return 0;
 
         COMPARE_StateAttribute_Types(Material, sa);
         COMPARE_StateAttribute_Parameter(mDiffuse);

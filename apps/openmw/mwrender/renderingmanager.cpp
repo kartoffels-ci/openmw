@@ -330,6 +330,8 @@ namespace MWRender
         bool reverseZ = SceneUtil::AutoDepth::isReversed();
         const SceneUtil::LightingMethod lightingMethod = Settings::shaders().mLightingMethod;
 
+        State::Material::setBindlessEnabled(Settings::shaders().mBindlessTextures);
+
         resourceSystem->getSceneManager()->setParticleSystemMask(MWRender::Mask_ParticleSystem);
 
         // Figure out which pipeline must be used by default and inform the user
@@ -450,7 +452,7 @@ namespace MWRender
         globalDefines["numViews"] = "1";
         globalDefines["disableNormals"] = "1";
 
-        globalDefines["legacyBindings"] = "0";
+        globalDefines["legacyBindings"] = Settings::shaders().mBindlessTextures ? "0" : "1";
         globalDefines["diffuseMap"] = "0";
         globalDefines["darkMap"] = "0";
         globalDefines["detailMap"] = "0";
@@ -616,8 +618,11 @@ namespace MWRender
             mRootNode->getOrCreateStateSet()->setAttributeAndModes(clipcontrol, osg::StateAttribute::ON);
         }
 
-        mRootNode->insertChild(0, new State::GPUState(mResourceSystem->getSceneManager()->getResourceManager()));
-        mRootNode->getChild(0)->setNodeMask(Mask_RenderToTexture);
+        if (Settings::shaders().mBindlessTextures)
+        {
+            mRootNode->insertChild(0, new State::GPUState(mResourceSystem->getSceneManager()->getResourceManager()));
+            mRootNode->getChild(0)->setNodeMask(Mask_RenderToTexture);
+        }
 
         SceneUtil::setCameraClearDepth(mViewer->getCamera());
 

@@ -47,6 +47,9 @@ namespace State
 
         void releaseGLObjects(osg::State* state = nullptr) const override;
 
+        static void setBindlessEnabled(bool enabled) { sBindless = enabled; }
+        static bool getBindlessEnabled() { return sBindless; }
+
         GPUData compile()
         {
             GPUData data;
@@ -164,6 +167,8 @@ namespace State
         }
 
         ColorModes getColorMode() const { return mColorMode; }
+
+        static inline bool sBindless = false;
 
     private:
         bool mDirty = false;
