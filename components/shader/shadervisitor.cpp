@@ -303,6 +303,9 @@ namespace Shader
         osg::ref_ptr<AddedState> addedState = getAddedState(*stateset);
 
         auto applyBindlessTexture = [&](osg::ref_ptr<osg::Texture2D>& ref, unsigned int unit) {
+            if (!State::Material::getBindlessEnabled())
+                return;
+
             ref = dynamic_cast<osg::Texture2D*>(stateset->getTextureAttribute(unit, osg::StateAttribute::TEXTURE));
 
             if (!writableStateSet)
@@ -671,14 +674,17 @@ namespace Shader
         defineMap["parallax"] = reqs.mNormalHeight ? "1" : "0";
         defineMap["reconstructNormalZ"] = reqs.mReconstructNormalZ ? "1" : "0";
 
-        // writableStateSet->addUniform(new osg::Uniform("colorMode", reqs.mMaterial->mColorMode));
-        // addedState->addUniform("colorMode");
+        if (!State::Material::getBindlessEnabled())
+        {
+            writableStateSet->addUniform(new osg::Uniform("colorMode", static_cast<int>(reqs.mMaterial->getColorMode())));
+            addedState->addUniform("colorMode");
 
-        // writableStateSet->addUniform(new osg::Uniform("specStrength", reqs.mMaterial->mSpecularStrength));
-        // addedState->addUniform("specStrength");
+            writableStateSet->addUniform(new osg::Uniform("specStrength", reqs.mMaterial->getSpecularStrength()));
+            addedState->addUniform("specStrength");
 
-        // writableStateSet->addUniform(new osg::Uniform("emissiveMult", reqs.mMaterial->mEmissiveMultiplier));
-        // addedState->addUniform("emissiveMult");
+            writableStateSet->addUniform(new osg::Uniform("emissiveMult", reqs.mMaterial->getEmissiveMultiplier()));
+            addedState->addUniform("emissiveMult");
+        }
 
         defineMap["alphaFunc"] = std::to_string(reqs.mAlphaFunc);
 
@@ -791,9 +797,8 @@ namespace Shader
 
         for (const auto& [unit, name] : reqs.mTextures)
         {
-            // Bindless mode doesn't want these nasty uniforms which make things not mergable!
-            // if (name == "diffuseMap")
-            continue;
+            if (State::Material::getBindlessEnabled())
+                continue;
 
             writableStateSet->addUniform(new osg::Uniform(name.c_str(), unit), osg::StateAttribute::ON);
             addedState->addUniform(name);
@@ -913,79 +918,82 @@ namespace Shader
         bool changed = false;
 
         ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-        // We can't use BIND_OVERALL because it will break when geometry is merged
-        std::size_t materialIndex = mResourceManager.registerMaterial(reqs.mMaterial);
-        std::size_t diffuseIndex = reqs.mDiffuseMap ? mResourceManager.registerTexture(reqs.mDiffuseMap) : 0;
-        osg::ref_ptr<osg::Vec4Array> vertexAttrib0
-            = new osg::Vec4Array(sourceGeometry.getVertexArray()->getNumElements());
-        osg::ref_ptr<osg::Vec4Array> vertexAttrib1
-            = new osg::Vec4Array(sourceGeometry.getVertexArray()->getNumElements());
-        osg::ref_ptr<osg::Vec4Array> vertexAttrib2
-            = new osg::Vec4Array(sourceGeometry.getVertexArray()->getNumElements());
-
-        bool vertexAttrib1Used = false;
-        bool vertexAttrib2Used = false;
-
-        for (size_t i = 0; i < vertexAttrib0->size(); ++i)
+        // Bindless path: pack material/texture indices into per-vertex attribs for SSBO lookup
+        if (State::Material::getBindlessEnabled())
         {
-            (*vertexAttrib0)[i].x() = materialIndex;
+            std::size_t materialIndex = mResourceManager.registerMaterial(reqs.mMaterial);
+            std::size_t diffuseIndex = reqs.mDiffuseMap ? mResourceManager.registerTexture(reqs.mDiffuseMap) : 0;
+            osg::ref_ptr<osg::Vec4Array> vertexAttrib0
+                = new osg::Vec4Array(sourceGeometry.getVertexArray()->getNumElements());
+            osg::ref_ptr<osg::Vec4Array> vertexAttrib1
+                = new osg::Vec4Array(sourceGeometry.getVertexArray()->getNumElements());
+            osg::ref_ptr<osg::Vec4Array> vertexAttrib2
+                = new osg::Vec4Array(sourceGeometry.getVertexArray()->getNumElements());
 
-            if (reqs.mDiffuseMap)
-            {
-                (*vertexAttrib0)[i].y() = diffuseIndex;
-            }
-            if (reqs.mNormalMap)
-            {
-                (*vertexAttrib0)[i].z() = mResourceManager.registerTexture(reqs.mNormalMap);
-            }
-            if (reqs.mSpecularMap)
-            {
-                (*vertexAttrib0)[i].w() = mResourceManager.registerTexture(reqs.mSpecularMap);
-            }
+            bool vertexAttrib1Used = false;
+            bool vertexAttrib2Used = false;
 
-            if (reqs.mDecalMap)
+            for (size_t i = 0; i < vertexAttrib0->size(); ++i)
             {
-                vertexAttrib1Used = true;
-                (*vertexAttrib1)[i].x() = mResourceManager.registerTexture(reqs.mDecalMap);
-            }
-            if (reqs.mEmissiveMap)
-            {
-                vertexAttrib1Used = true;
-                (*vertexAttrib1)[i].y() = mResourceManager.registerTexture(reqs.mEmissiveMap);
-            }
-            if (reqs.mDarkMap)
-            {
-                vertexAttrib1Used = true;
-                (*vertexAttrib1)[i].z() = mResourceManager.registerTexture(reqs.mDarkMap);
-            }
-            if (reqs.mEnvMap)
-            {
-                vertexAttrib1Used = true;
-                (*vertexAttrib1)[i].w() = mResourceManager.registerTexture(reqs.mEnvMap);
-            }
+                (*vertexAttrib0)[i].x() = materialIndex;
 
-            if (reqs.mDetailMap)
-            {
-                vertexAttrib2Used = true;
-                (*vertexAttrib2)[i].x() = mResourceManager.registerTexture(reqs.mDetailMap);
+                if (reqs.mDiffuseMap)
+                {
+                    (*vertexAttrib0)[i].y() = diffuseIndex;
+                }
+                if (reqs.mNormalMap)
+                {
+                    (*vertexAttrib0)[i].z() = mResourceManager.registerTexture(reqs.mNormalMap);
+                }
+                if (reqs.mSpecularMap)
+                {
+                    (*vertexAttrib0)[i].w() = mResourceManager.registerTexture(reqs.mSpecularMap);
+                }
+
+                if (reqs.mDecalMap)
+                {
+                    vertexAttrib1Used = true;
+                    (*vertexAttrib1)[i].x() = mResourceManager.registerTexture(reqs.mDecalMap);
+                }
+                if (reqs.mEmissiveMap)
+                {
+                    vertexAttrib1Used = true;
+                    (*vertexAttrib1)[i].y() = mResourceManager.registerTexture(reqs.mEmissiveMap);
+                }
+                if (reqs.mDarkMap)
+                {
+                    vertexAttrib1Used = true;
+                    (*vertexAttrib1)[i].z() = mResourceManager.registerTexture(reqs.mDarkMap);
+                }
+                if (reqs.mEnvMap)
+                {
+                    vertexAttrib1Used = true;
+                    (*vertexAttrib1)[i].w() = mResourceManager.registerTexture(reqs.mEnvMap);
+                }
+
+                if (reqs.mDetailMap)
+                {
+                    vertexAttrib2Used = true;
+                    (*vertexAttrib2)[i].x() = mResourceManager.registerTexture(reqs.mDetailMap);
+                }
+                if (reqs.mBumpMap)
+                {
+                    vertexAttrib2Used = true;
+                    (*vertexAttrib2)[i].y() = mResourceManager.registerTexture(reqs.mBumpMap);
+                }
+                if (reqs.mGlossMap)
+                {
+                    vertexAttrib2Used = true;
+                    (*vertexAttrib2)[i].z() = mResourceManager.registerTexture(reqs.mGlossMap);
+                }
             }
-            if (reqs.mBumpMap)
-            {
-                vertexAttrib2Used = true;
-                (*vertexAttrib2)[i].y() = mResourceManager.registerTexture(reqs.mBumpMap);
-            }
-            if (reqs.mGlossMap)
-            {
-                vertexAttrib2Used = true;
-                (*vertexAttrib2)[i].z() = mResourceManager.registerTexture(reqs.mGlossMap);
-            }
+            sourceGeometry.setVertexAttribArray(1, vertexAttrib0, osg::Array::BIND_PER_VERTEX);
+            if (vertexAttrib1Used)
+                sourceGeometry.setVertexAttribArray(6, vertexAttrib1, osg::Array::BIND_PER_VERTEX);
+            if (vertexAttrib2Used)
+                sourceGeometry.setVertexAttribArray(7, vertexAttrib2, osg::Array::BIND_PER_VERTEX);
+            changed = true;
         }
-        sourceGeometry.setVertexAttribArray(1, vertexAttrib0, osg::Array::BIND_PER_VERTEX);
-        if (vertexAttrib1Used)
-            sourceGeometry.setVertexAttribArray(6, vertexAttrib1, osg::Array::BIND_PER_VERTEX);
-        if (vertexAttrib2Used)
-            sourceGeometry.setVertexAttribArray(7, vertexAttrib2, osg::Array::BIND_PER_VERTEX);
-        changed = true;
         ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
         if (mAllowedToModifyStateSets && (useShader || generateTangents))
@@ -1070,16 +1078,19 @@ namespace Shader
             if (drawable.getStateSet())
                 applyStateSet(drawable.getStateSet(), drawable);
 
-            if (auto* particleSys = dynamic_cast<NifOsg::ParticleSystem*>(&drawable))
+            if (State::Material::getBindlessEnabled())
             {
-                std::size_t materialIndex = mResourceManager.registerMaterial(mRequirements.back().mMaterial);
-                std::size_t textureIndex = mRequirements.back().mDiffuseMap
-                    ? mResourceManager.registerTexture(mRequirements.back().mDiffuseMap)
-                    : 0;
-                osg::ref_ptr<osg::Vec4Array> vertexAttrib = new osg::Vec4Array(1);
-                (*vertexAttrib)[0] = osg::Vec4f(materialIndex, textureIndex, 0, 0);
-                vertexAttrib->setBinding(osg::Array::BIND_OVERALL);
-                particleSys->mMaterialArray = vertexAttrib;
+                if (auto* particleSys = dynamic_cast<NifOsg::ParticleSystem*>(&drawable))
+                {
+                    std::size_t materialIndex = mResourceManager.registerMaterial(mRequirements.back().mMaterial);
+                    std::size_t textureIndex = mRequirements.back().mDiffuseMap
+                        ? mResourceManager.registerTexture(mRequirements.back().mDiffuseMap)
+                        : 0;
+                    osg::ref_ptr<osg::Vec4Array> vertexAttrib = new osg::Vec4Array(1);
+                    (*vertexAttrib)[0] = osg::Vec4f(materialIndex, textureIndex, 0, 0);
+                    vertexAttrib->setBinding(osg::Array::BIND_OVERALL);
+                    particleSys->mMaterialArray = vertexAttrib;
+                }
             }
         }
 

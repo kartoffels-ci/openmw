@@ -21,10 +21,12 @@ set(SHADER_FILES
     lib/core/fragment.h.glsl
     lib/core/fragment_multiview.glsl
     lib/core/fragment_bindless.glsl
+    lib/core/fragment_legacy.glsl
     lib/core/vertex.glsl
     lib/core/vertex.h.glsl
     lib/core/vertex_multiview.glsl
     lib/core/vertex_bindless.glsl
+    lib/core/vertex_legacy.glsl
     lib/light/lighting.glsl
     lib/light/lighting_util.glsl
     lib/sky/passes.glsl
