@@ -391,9 +391,10 @@ namespace Shader
 
                                 applyBindlessTexture(mRequirements.back().mBumpMap, unit);
                             }
-                            else if (texName == "envMap" && mApplyLightingToEnvMaps)
+                            else if (texName == "envMap")
                             {
-                                mRequirements.back().mShaderRequired = true;
+                                if (mApplyLightingToEnvMaps)
+                                    mRequirements.back().mShaderRequired = true;
 
                                 applyBindlessTexture(mRequirements.back().mEnvMap, unit);
                             }

@@ -1,6 +1,8 @@
 #include "renderingmanager.hpp"
 
+#include <chrono>
 #include <cstdlib>
+#include <iomanip>
 #include <limits>
 
 #include <osg/ClipControl>
@@ -88,6 +90,50 @@
 #include "util.hpp"
 #include "vismask.hpp"
 #include "water.hpp"
+
+namespace
+{
+    // InitialDrawCallback fires on the draw thread AFTER Renderer::compile() (ICO)
+    // and flushDeletedGLObjects(), but BEFORE render stages. Records the timestamp.
+    // FinalDrawCallback fires after all render stages complete.
+    // The gap (Initial → Final) = render stages time.
+    // Compare with [Frame] renderingTraversals to isolate compile/cull/flush time:
+    //   compile+cull+flush ≈ renderingTraversals - renderStages
+    class DrawTimingCallback : public osg::Camera::DrawCallback
+    {
+    public:
+        void operator()(osg::RenderInfo& renderInfo) const override
+        {
+            mInitialTime = std::chrono::high_resolution_clock::now();
+            mFrame = renderInfo.getState()->getFrameStamp()->getFrameNumber();
+        }
+
+        mutable std::chrono::high_resolution_clock::time_point mInitialTime;
+        mutable unsigned int mFrame = 0;
+    };
+
+    class DrawTimingFinalCallback : public osg::Camera::DrawCallback
+    {
+    public:
+        DrawTimingFinalCallback(DrawTimingCallback* initial)
+            : mInitial(initial)
+        {
+        }
+
+        void operator()(osg::RenderInfo& renderInfo) const override
+        {
+            auto now = std::chrono::high_resolution_clock::now();
+            double drawMs = std::chrono::duration<double, std::milli>(now - mInitial->mInitialTime).count();
+
+            if (drawMs > 16.0)
+                Log(Debug::Error) << "[Draw] frame " << mInitial->mFrame
+                                  << " renderStages=" << std::fixed << std::setprecision(1) << drawMs << "ms";
+        }
+
+    private:
+        DrawTimingCallback* mInitial;
+    };
+}
 
 namespace MWRender
 {
@@ -536,6 +582,11 @@ namespace MWRender
             sceneRoot->getParent(0), sceneRoot, mResourceSystem, mViewer->getIncrementalCompileOperation());
 
         mCamera = std::make_unique<Camera>(mViewer->getCamera());
+
+        // Draw thread timing diagnostics
+        auto* initialCb = new DrawTimingCallback;
+        mViewer->getCamera()->setInitialDrawCallback(initialCb);
+        mViewer->getCamera()->setFinalDrawCallback(new DrawTimingFinalCallback(initialCb));
 
         mScreenshotManager = std::make_unique<ScreenshotManager>(viewer);
 

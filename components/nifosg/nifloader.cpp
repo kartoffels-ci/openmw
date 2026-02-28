@@ -1550,9 +1550,10 @@ namespace NifOsg
 
             const auto& vertices = niGeometryData->mVertices;
             const auto& normals = niGeometryData->mNormals;
-            // Always bind dummy vertex colors so the optimzer can merge
-            const auto& colors
-                = niGeometryData->mColors.empty() ? std::vector<osg::Vec4f>(vertices.size()) : niGeometryData->mColors;
+            // Bindless: always bind dummy vertex colors so the optimizer can merge
+            const auto& colors = (State::Material::getBindlessEnabled() && niGeometryData->mColors.empty())
+                ? std::vector<osg::Vec4f>(vertices.size())
+                : niGeometryData->mColors;
             if (!vertices.empty())
                 geometry->setVertexArray(new osg::Vec3Array(static_cast<unsigned>(vertices.size()), vertices.data()));
             if (!normals.empty())
@@ -2946,7 +2947,7 @@ namespace NifOsg
             if (!mPushedSorter && !hasSortAlpha && mHasStencilProperty)
                 setBinTraversal(node->getOrCreateStateSet());
 
-            // mat = shareAttribute(mat);
+            mat = shareAttribute(mat);
 
             osg::StateSet* stateset = node->getOrCreateStateSet();
             stateset->setAttributeAndModes(mat, osg::StateAttribute::ON);
