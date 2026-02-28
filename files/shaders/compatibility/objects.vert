@@ -68,9 +68,6 @@ varying vec4 passTangent;
 #include "shadows_vertex.glsl"
 #include "compatibility/normals.glsl"
 
-uniform vec2 screenRes;
-uniform float near;
-uniform float far;
 #include "lib/light/lighting.glsl"
 #include "lib/view/depth.glsl"
 
@@ -157,7 +154,7 @@ void main(void)
 #if !PER_PIXEL_LIGHTING
     Material material = getMaterial();
     vec3 diffuseLight, ambientLight, specularLight;
-    doLighting(gl_Position, viewPos.xyz, viewNormal, material.shininess, diffuseLight, ambientLight, specularLight, shadowDiffuseLighting, shadowSpecularLighting);
+    doLighting(viewPos.xyz, viewNormal, material.shininess, diffuseLight, ambientLight, specularLight, shadowDiffuseLighting, shadowSpecularLighting);
     passLighting = getDiffuseColor(material).xyz * diffuseLight + getAmbientColor(material).xyz * ambientLight + getEmissionColor(material).xyz * material.emissiveMult;
     passSpecular = getSpecularColor(material).xyz * specularLight * material.specStrength;
     clampLightingResult(passLighting);

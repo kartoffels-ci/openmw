@@ -28,9 +28,6 @@ varying vec3 passNormal;
 #include "shadows_vertex.glsl"
 #include "compatibility/normals.glsl"
 
-uniform vec2 screenRes;
-uniform float near;
-uniform float far;
 #include "lib/light/lighting.glsl"
 #include "lib/view/depth.glsl"
 
@@ -60,7 +57,7 @@ void main(void)
 
 #if !PER_PIXEL_LIGHTING
     vec3 diffuseLight, ambientLight, specularLight;
-    doLighting(gl_Position, viewPos.xyz, viewNormal, gl_FrontMaterial.shininess, diffuseLight, ambientLight, specularLight, shadowDiffuseLighting, shadowSpecularLighting);
+    doLighting(viewPos.xyz, viewNormal, gl_FrontMaterial.shininess, diffuseLight, ambientLight, specularLight, shadowDiffuseLighting, shadowSpecularLighting);
     passLighting = getDiffuseColor().xyz * diffuseLight + getAmbientColor().xyz * ambientLight + getEmissionColor().xyz;
     passSpecular = getSpecularColor().xyz * specularLight;
     clampLightingResult(passLighting);

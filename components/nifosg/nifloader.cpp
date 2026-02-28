@@ -2944,16 +2944,41 @@ namespace NifOsg
                 mat->setColorMode(State::ColorModes::ColorMode_None);
             }
 
-            if (!mPushedSorter && !hasSortAlpha && mHasStencilProperty)
-                setBinTraversal(node->getOrCreateStateSet());
+            if (State::Material::getBindlessEnabled())
+            {
+                // Bindless: always attach material (SSBO needs material index on every drawable)
+                mat = shareAttribute(mat);
 
-            mat = shareAttribute(mat);
+                if (!mPushedSorter && !hasSortAlpha && mHasStencilProperty)
+                    setBinTraversal(node->getOrCreateStateSet());
 
-            osg::StateSet* stateset = node->getOrCreateStateSet();
-            stateset->setAttributeAndModes(mat, osg::StateAttribute::ON);
+                osg::StateSet* stateset = node->getOrCreateStateSet();
+                stateset->setAttributeAndModes(mat, osg::StateAttribute::ON);
+            }
+            else
+            {
+                // Legacy: only attach when material has non-default values.
+                // Nodes without statesets can be merged by the optimizer (LessGeometry groups by
+                // StateSet pointer — nullptr groups together, enabling geometry merging).
+                if (hasMatCtrl || mat->getColorMode() != State::ColorModes::ColorMode_None
+                    || mat->getEmission() != osg::Vec4f(0, 0, 0, 1)
+                    || mat->getDiffuse() != osg::Vec4f(1, 1, 1, 1)
+                    || mat->getAmbient() != osg::Vec4f(1, 1, 1, 1)
+                    || mat->getShininess() != 0
+                    || mat->getSpecular() != osg::Vec4f(0.f, 0.f, 0.f, 0.f))
+                {
+                    mat = shareAttribute(mat);
+                    node->getOrCreateStateSet()->setAttributeAndModes(mat, osg::StateAttribute::ON);
+                }
+
+                if (!mPushedSorter && !hasSortAlpha && mHasStencilProperty)
+                    setBinTraversal(node->getOrCreateStateSet());
+            }
 
             if (!mPushedSorter)
                 return;
+
+            osg::StateSet* stateset = node->getOrCreateStateSet();
 
             auto assignBin = [&](Nif::NiSortAdjustNode::SortingMode mode, int type) {
                 if (mode == Nif::NiSortAdjustNode::SortingMode::Off)

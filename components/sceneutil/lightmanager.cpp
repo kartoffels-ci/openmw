@@ -12,16 +12,15 @@
 
 #include <osgUtil/CullVisitor>
 
-#include <components/misc/constants.hpp>
-#include <components/misc/hash.hpp>
 #include <components/resource/scenemanager.hpp>
 #include <components/sceneutil/glextensions.hpp>
 #include <components/sceneutil/util.hpp>
-#include <components/settings/values.hpp>
 #include <components/shader/shadermanager.hpp>
 
+#include <components/misc/constants.hpp>
+#include <components/misc/hash.hpp>
+
 #include <components/debug/debuglog.hpp>
-#include <osg/io_utils>
 
 namespace
 {
@@ -421,230 +420,6 @@ namespace SceneUtil
         std::vector<osg::ref_ptr<osg::Light>> mLights;
     };
 
-    // Utility function to compute intersection with Z-plane
-    osg::Vec3 computeZPlaneIntersection(const osg::Vec3& A, const osg::Vec3& B, float zDistance)
-    {
-        osg::Vec3 ab = B - A;
-        float t = (zDistance - A.z()) / ab.z();
-        return A + ab * t;
-    }
-
-    osg::Vec3f screenToView(
-        const osg::Vec2f& screenCoord, const osg::Vec2f& screenDim, const osg::Matrixf& inverseProjection)
-    {
-        osg::Vec4f ndc = osg::Vec4f(
-            screenCoord.x() / screenDim.x() * 2.0 - 1.0, screenCoord.y() / screenDim.y() * 2.0 - 1.0, -1.0, 1.0);
-
-        osg::Vec4f viewCoord = ndc * inverseProjection;
-
-        return {
-            viewCoord.x() / viewCoord.w(),
-            viewCoord.y() / viewCoord.w(),
-            viewCoord.z() / viewCoord.w(),
-        };
-    }
-
-    // Returns the intersection point of an infinite line and a
-    // plane perpendicular to the Z-axis
-    osg::Vec3f lineIntersectionWithZPlane(const osg::Vec3f& startPoint, const osg::Vec3f& endPoint, float zDistance)
-    {
-        osg::Vec3f direction = endPoint - startPoint;
-        osg::Vec3f normal = osg::Vec3f(0.0, 0.0, -1.0); // plane normal
-
-        // skip check if the line is parallel to the plane.
-        float t = (zDistance - (normal * startPoint)) / (normal * direction);
-        // the parametric form of the line equation
-        return { startPoint.x() + t * direction.x(), startPoint.y() + t * direction.y(),
-            startPoint.z() + t * direction.z() };
-    }
-
-    osg::Vec3f clamp(const osg::Vec3f x, const osg::Vec3f& min, const osg::Vec3f& max)
-    {
-        return osg::Vec3f(std::clamp(x.x(), min.x(), max.x()), std::clamp(x.y(), min.y(), max.y()),
-            std::clamp(x.z(), min.z(), max.z()));
-    }
-
-    osg::Vec3f min(const osg::Vec3f& a, const osg::Vec3f& b)
-    {
-        return osg::Vec3f(std::min(a.x(), b.x()), std::min(a.y(), b.y()), std::min(a.z(), b.z()));
-    }
-
-    osg::Vec3f max(const osg::Vec3f& a, const osg::Vec3f& b)
-    {
-        return osg::Vec3f(std::max(a.x(), b.x()), std::max(a.y(), b.y()), std::max(a.z(), b.z()));
-    }
-
-    Cluster computeFroxelBounds(int x, int y, int z, int gridWidth, int gridHeight, int gridDepth, float zNear,
-        float zFar, osgUtil::CullVisitor* cv)
-    {
-        osg::Vec2f screenDim = osg::Vec2f(cv->getViewport()->width(), cv->getViewport()->height());
-
-        Cluster cluster;
-
-        osg::Vec2 tileSize = osg::Vec2f(screenDim.x() / gridWidth, screenDim.y() / gridHeight);
-
-        // Tile in screen-space
-        osg::Vec2f minTile_screenspace = osg::Vec2f(x * tileSize.x(), y * tileSize.y());
-        osg::Vec2f maxTile_screenspace = osg::Vec2f((x + 1) * tileSize.x(), (y + 1) * tileSize.y());
-
-        osg::Matrixf inverseProjection = osg::Matrixf::inverse(*cv->getProjectionMatrix());
-
-        // convert tile to view space sitting on the near plane
-        osg::Vec3f minTile = screenToView(minTile_screenspace, screenDim, inverseProjection);
-        osg::Vec3f maxTile = screenToView(maxTile_screenspace, screenDim, inverseProjection);
-
-        float planeNear = zNear * std::pow(zFar / zNear, z / float(gridDepth));
-        float planeFar = zNear * std::pow(zFar / zNear, (z + 1) / float(gridDepth));
-
-        // the line goes from the eye position in view space (0, 0, 0)
-        // through the min/max points of a tile to intersect with a given cluster's near-far planes
-        osg::Vec3f minPointNear = lineIntersectionWithZPlane(osg::Vec3f(0, 0, 0), minTile, planeNear);
-        osg::Vec3f minPointFar = lineIntersectionWithZPlane(osg::Vec3f(0, 0, 0), minTile, planeFar);
-        osg::Vec3f maxPointNear = lineIntersectionWithZPlane(osg::Vec3f(0, 0, 0), maxTile, planeNear);
-        osg::Vec3f maxPointFar = lineIntersectionWithZPlane(osg::Vec3f(0, 0, 0), maxTile, planeFar);
-
-        cluster.minPoint = min(minPointNear, minPointFar);
-        cluster.maxPoint = max(maxPointNear, maxPointFar);
-
-        return cluster;
-    }
-
-    void LightManager::generateFroxelGrid(osgUtil::CullVisitor* cv)
-    {
-        osg::observer_ptr<osg::Camera> camPtr = cv->getCurrentCamera();
-
-        // Check for any shared frustums we can use
-        // For example, the refraction camera and main scene do not need seperate views/states
-        for (const auto& [camera, viewData] : mCachedFroxelBounds)
-        {
-            if (camPtr.get() == camera.get())
-                continue;
-
-            // HACK: share refraction and scene camera view data/light assignments
-            // Comparing the view/projection matrices doesn't work here
-            if (camera->getName() == Constants::SceneCamera && camPtr->getName() == "RefractionCamera")
-            {
-                // Log(Debug::Error) << "FOUND: " << camera->getName() << " === " << camPtr->getName();
-
-                mCachedFroxelBounds[camPtr] = viewData;
-                return;
-            }
-        }
-
-        const osg::RefMatrix* viewMatrix = cv->getCurrentRenderStage()->getInitialViewMatrix();
-
-        int gridWidth = 16;
-        int gridHeight = 9;
-        int gridDepth = 24;
-        float zNear = Settings::camera().mNearClip;
-        float zFar = Settings::camera().mViewingDistance;
-
-        const auto& lights = getLightsInViewSpace(cv, viewMatrix, cv->getTraversalNumber());
-
-        auto& indexMap = getLightIndexMap(cv->getTraversalNumber());
-        for (const auto& light : lights)
-        {
-            auto id = light.mLightSource->getId();
-            if (indexMap.find(id) != indexMap.end())
-                continue;
-
-            int index = indexMap.size() + 1;
-            updateGPUPointLight(index, light.mLightSource, cv->getTraversalNumber(), viewMatrix);
-            indexMap.emplace(id, index);
-        }
-
-        auto it = mCachedFroxelBounds.find(camPtr);
-        // Generate froxel bounds for this camera if we haven't already
-        // TODO: need to re-generate if the camera properties change (width, height, fov, near, far)
-        if (it == mCachedFroxelBounds.end())
-        {
-            std::vector<Cluster> bounds(gridWidth * gridHeight * gridDepth);
-
-            for (int x = 0; x < gridWidth; ++x)
-            {
-                for (int y = 0; y < gridHeight; ++y)
-                {
-                    for (int z = 0; z < gridDepth; ++z)
-                    {
-                        int index = x + y * gridWidth + z * (gridWidth * gridHeight);
-                        bounds[index] = computeFroxelBounds(
-                            x, y, z, gridWidth, gridHeight, gridDepth, Settings::camera().mNearClip, 8192, cv);
-                    }
-                }
-            }
-
-            it = mCachedFroxelBounds.insert(std::make_pair(camPtr, std::make_shared<ViewDependentFroxel>())).first;
-            it->second->mFroxelData = std::move(bounds);
-        }
-
-        auto& froxelGrid = it->second->mAttribute[cv->getTraversalNumber() % 2]->mFroxelGrid;
-        auto& lightIndices = it->second->mAttribute[cv->getTraversalNumber() % 2]->mLightIndices;
-
-        froxelGrid.clear();
-        lightIndices.clear();
-
-        // zero is sun
-        lightIndices.push_back(0);
-
-        int froxelCount = gridWidth * gridHeight * gridDepth;
-        froxelGrid.resize(froxelCount);
-
-        const auto& froxels = it->second->mFroxelData;
-
-        const int numThreads = std::thread::hardware_concurrency();
-
-        // Thread-safe storage for light indices
-        std::vector<std::vector<std::uint32_t>> froxelLightIndices(gridWidth * gridHeight * gridDepth);
-
-        // Divide work into chunks
-        auto processChunk = [&](int startFroxel, int endFroxel) {
-            for (int froxelID = startFroxel; froxelID < endFroxel; ++froxelID)
-            {
-                const Cluster& cluster = froxels[froxelID];
-
-                std::vector<std::uint32_t> localLightIndices;
-
-                for (size_t i = 0; i < lights.size(); ++i)
-                {
-                    osg::Vec3f center = lights[i].mViewBound.center();
-                    float radius = lights[i].mLightSource->getRadius() * 2;
-
-                    osg::Vec3f closestPoint = clamp(center, cluster.minPoint, cluster.maxPoint);
-                    float distanceSquared = (closestPoint - center).length2();
-
-                    if (distanceSquared < radius * radius)
-                    {
-                        localLightIndices.push_back(static_cast<std::uint32_t>(i + 1));
-                    }
-                }
-
-                froxelLightIndices[froxelID] = std::move(localLightIndices);
-            }
-        };
-
-        std::vector<std::thread> threads;
-        int totalFroxels = gridWidth * gridHeight * gridDepth;
-        int chunkSize = (totalFroxels + numThreads - 1) / numThreads;
-
-        for (int t = 0; t < numThreads; ++t)
-        {
-            int startFroxel = t * chunkSize;
-            int endFroxel = std::min(startFroxel + chunkSize, totalFroxels);
-            threads.emplace_back(processChunk, startFroxel, endFroxel);
-        }
-
-        for (auto& thread : threads)
-            thread.join();
-
-        for (int froxelID = 0; froxelID < froxelLightIndices.size(); ++froxelID)
-        {
-            froxelGrid[froxelID].offset = lightIndices.size();
-            lightIndices.insert(
-                lightIndices.end(), froxelLightIndices[froxelID].begin(), froxelLightIndices[froxelID].end());
-            froxelGrid[froxelID].count = froxelLightIndices[froxelID].size();
-        }
-    }
-
     struct StateSetGenerator
     {
         LightManager* mLightManager;
@@ -686,6 +461,57 @@ namespace SceneUtil
                     mLightManager->getDummies()[i + mLightManager->getStartLight()].get(), osg::StateAttribute::ON);
 
             return stateset;
+        }
+    };
+
+    struct StateSetGeneratorSingleUBO : StateSetGenerator
+    {
+        osg::ref_ptr<osg::StateSet> generate(const LightManager::LightList& lightList, size_t frameNum) override
+        {
+            osg::ref_ptr<osg::StateSet> stateset = new osg::StateSet;
+
+            osg::ref_ptr<osg::Uniform> indicesUni
+                = new osg::Uniform(osg::Uniform::Type::INT, "PointLightIndex", mLightManager->getMaxLights());
+            int pointCount = 0;
+
+            for (size_t i = 0; i < lightList.size(); ++i)
+            {
+                int bufIndex = mLightManager->getLightIndexMap(frameNum)[lightList[i]->mLightSource->getId()];
+                indicesUni->setElement(pointCount++, bufIndex);
+            }
+            stateset->addUniform(indicesUni);
+            stateset->addUniform(new osg::Uniform("PointLightCount", pointCount));
+
+            return stateset;
+        }
+
+        // Cached statesets must be revalidated in case the light indices change. There is no actual link between
+        // a light's ID and the buffer index it will eventually be assigned (or reassigned) to.
+        void update(osg::StateSet* stateset, const LightManager::LightList& lightList, size_t frameNum) override
+        {
+            int newCount = 0;
+            int oldCount;
+
+            auto uOldArray = stateset->getUniform("PointLightIndex");
+            auto uOldCount = stateset->getUniform("PointLightCount");
+
+            uOldCount->get(oldCount);
+
+            // max lights count can change during runtime
+            oldCount = std::min(mLightManager->getMaxLights(), oldCount);
+
+            auto& lightData = mLightManager->getLightIndexMap(frameNum);
+
+            for (int i = 0; i < oldCount; ++i)
+            {
+                auto* lightSource = lightList[i]->mLightSource;
+                auto it = lightData.find(lightSource->getId());
+                if (it != lightData.end())
+                    uOldArray->setElement(newCount++, it->second);
+            }
+
+            uOldArray->dirty();
+            uOldCount->set(newCount);
         }
     };
 
@@ -800,21 +626,10 @@ namespace SceneUtil
 
         void operator()(LightManager* node, osgUtil::CullVisitor* cv)
         {
-            if (!(cv->getTraversalMask() & node->getLightingMask()))
-            {
-                traverse(node, cv);
-                return;
-            }
-
             osg::ref_ptr<osg::StateSet> stateset = new osg::StateSet;
 
             if (node->getLightingMethod() == LightingMethod::SingleUBO)
             {
-                node->generateFroxelGrid(cv);
-
-                stateset->setAttributeAndModes(
-                    node->mCachedFroxelBounds[cv->getCurrentCamera()]->mAttribute[cv->getTraversalNumber() % 2],
-                    osg::StateAttribute::ON);
                 const size_t frameId = cv->getTraversalNumber() % 2;
                 stateset->setAttributeAndModes(mUBBs[frameId], osg::StateAttribute::ON);
 
@@ -842,6 +657,7 @@ namespace SceneUtil
                     stateset->addUniform(node->generateLightBufferUniform(lightMat));
                 }
             }
+
             cv->pushStateSet(stateset);
             traverse(node, cv);
             cv->popStateSet();
@@ -900,12 +716,11 @@ namespace SceneUtil
         unsigned int frame = state.getFrameStamp()->getFrameNumber();
         unsigned int index = frame % 2;
 
-        auto* ext = state.get<osg::GLExtensions>();
-
         if (!mInitLayout)
         {
             mDummyProgram->apply(state);
             auto handle = mDummyProgram->getPCP(state)->getHandle();
+            auto* ext = state.get<osg::GLExtensions>();
 
             int activeUniformBlocks = 0;
             ext->glGetProgramiv(handle, GL_ACTIVE_UNIFORM_BLOCKS, &activeUniformBlocks);
@@ -976,65 +791,6 @@ namespace SceneUtil
             handle, static_cast<GLsizei>(indices.size()), indices.data(), GL_UNIFORM_OFFSET, offsets.data());
 
         mTemplate->configureLayout(offsets[0], offsets[1], offsets[2], totalBlockSize, stride);
-    }
-
-    ClusteredLightsAttribute::ClusteredLightsAttribute(const ClusteredLightsAttribute& copy, const osg::CopyOp& copyop)
-        : osg::StateAttribute(copy, copyop)
-        , mFroxelGrid(copy.mFroxelGrid)
-        , mLightIndices(copy.mLightIndices)
-    {
-    }
-
-    void ClusteredLightsAttribute::apply(osg::State& state) const
-    {
-        unsigned int frame = state.getFrameStamp()->getFrameNumber();
-        unsigned int index = frame % 2;
-
-        auto* ext = state.get<osg::GLExtensions>();
-
-        if (mFroxelBuffer == 0)
-        {
-            ext->glGenBuffers(1, &mFroxelBuffer);
-            ext->glGenBuffers(1, &mLightIndexBuffer);
-        }
-
-        // Upload froxel grid
-        ext->glBindBuffer(GL_SHADER_STORAGE_BUFFER, mFroxelBuffer);
-
-        if (mOldFroxelBufferSize != mFroxelGrid.size())
-        {
-            mOldFroxelBufferSize = mFroxelGrid.size();
-
-            ext->glBufferData(
-                GL_SHADER_STORAGE_BUFFER, mFroxelGrid.size() * sizeof(Froxel), mFroxelGrid.data(), GL_STATIC_DRAW);
-        }
-        else
-        {
-            ext->glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, mFroxelGrid.size() * sizeof(Froxel), mFroxelGrid.data());
-        }
-
-        // Upload light indices
-        ext->glBindBuffer(GL_SHADER_STORAGE_BUFFER, mLightIndexBuffer);
-
-        if (mOldLightIndexBufferSize != mLightIndices.size())
-        {
-            mOldLightIndexBufferSize = mLightIndices.size();
-
-            ext->glBufferData(GL_SHADER_STORAGE_BUFFER, mLightIndices.size() * sizeof(std::uint32_t),
-                mLightIndices.data(), GL_DYNAMIC_DRAW);
-        }
-        else
-        {
-            ext->glBufferSubData(
-                GL_SHADER_STORAGE_BUFFER, 0, mLightIndices.size() * sizeof(std::uint32_t), mLightIndices.data());
-        }
-
-        // Bind buffers to shader storage binding points
-        ext->glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, mFroxelBuffer);
-        ext->glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-
-        ext->glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, mLightIndexBuffer);
-        ext->glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     }
 
     LightingMethod LightManager::getLightingMethodFromString(const std::string& value)
@@ -1230,13 +986,14 @@ namespace SceneUtil
             case LightingMethod::FFP:
                 mStateSetGenerator = std::make_unique<StateSetGeneratorFFP>();
                 break;
+            case LightingMethod::SingleUBO:
+                mStateSetGenerator = std::make_unique<StateSetGeneratorSingleUBO>();
+                break;
             case LightingMethod::PerObjectUniform:
                 mStateSetGenerator = std::make_unique<StateSetGeneratorPerObjectUniform>();
                 break;
         }
-
-        if (mStateSetGenerator)
-            mStateSetGenerator->mLightManager = this;
+        mStateSetGenerator->mLightManager = this;
     }
 
     void LightManager::setLightingMask(size_t mask)
@@ -1331,6 +1088,21 @@ namespace SceneUtil
 
         // possible optimization: return a StateSet containing all requested lights plus some extra lights (if a
         // suitable one exists)
+
+        if (getLightingMethod() == LightingMethod::SingleUBO)
+        {
+            for (size_t i = 0; i < lightList.size(); ++i)
+            {
+                auto id = lightList[i]->mLightSource->getId();
+                if (getLightIndexMap(frameNum).find(id) != getLightIndexMap(frameNum).end())
+                    continue;
+
+                int index = static_cast<int>(getLightIndexMap(frameNum).size()) + 1;
+                updateGPUPointLight(index, lightList[i]->mLightSource, frameNum, viewMatrix);
+                getLightIndexMap(frameNum).emplace(id, index);
+            }
+        }
+
         auto& stateSetCache = mStateSetCache[frameNum % 2];
 
         LightIdList lightIdList;
@@ -1385,13 +1157,6 @@ namespace SceneUtil
                     transform.mLightSource->setLastAppliedFrame(frameNum);
                 }
 
-                osg::CullingSet& cullingSet = cv->getModelViewCullingStack().front();
-                osg::BoundingSphere frustumBound = viewBound;
-                frustumBound.radius() = transform.mLightSource->getRadius() * 2.f;
-                // Ignore culled lights
-                if (cullingSet.isCulled(frustumBound))
-                    continue;
-
                 LightSourceViewBound l;
                 l.mLightSource = transform.mLightSource;
                 l.mViewBound = viewBound;
@@ -1413,7 +1178,7 @@ namespace SceneUtil
 
                 if (fillPPLights)
                 {
-                    // osg::CullingSet& cullingSet = cv->getModelViewCullingStack().front();
+                    osg::CullingSet& cullingSet = cv->getModelViewCullingStack().front();
                     for (const auto& bound : it->second)
                     {
                         if (bound.mLightSource->getEmpty())
@@ -1423,11 +1188,11 @@ namespace SceneUtil
                         if (light->getDiffuse().x() < 0.f)
                             continue;
                         const float radius = bound.mLightSource->getRadius();
-                        // osg::BoundingSphere frustumBound = bound.mViewBound;
-                        // frustumBound.radius() = radius * 2.f;
-                        // // Ignore culled lights
-                        // if (cullingSet.isCulled(frustumBound))
-                        //     continue;
+                        osg::BoundingSphere frustumBound = bound.mViewBound;
+                        frustumBound.radius() = radius * 2.f;
+                        // Ignore culled lights
+                        if (cullingSet.isCulled(frustumBound))
+                            continue;
                         mPPLightBuffer->setLight(frameNum, light, radius);
                     }
                 }
@@ -1510,8 +1275,6 @@ namespace SceneUtil
 
         if (!(cv->getTraversalMask() & mLightManager->getLightingMask()))
             return false;
-
-        return false;
 
         // Possible optimizations:
         // - organize lights in a quad tree

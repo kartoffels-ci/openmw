@@ -26,7 +26,6 @@ varying float euclideanDepth;
 varying float linearDepth;
 uniform vec2 screenRes;
 uniform float far;
-uniform float near;
 uniform float alphaRef;
 
 #if PER_PIXEL_LIGHTING
@@ -76,7 +75,7 @@ void main()
     lighting = passLighting + shadowDiffuseLighting * shadowing;
 #else
     vec3 diffuseLight, ambientLight, specularLight;
-    doLighting(gl_FragCoord.xyz, passViewPos, viewNormal, gl_FrontMaterial.shininess, shadowing, diffuseLight, ambientLight, specularLight);
+    doLighting(passViewPos, viewNormal, gl_FrontMaterial.shininess, shadowing, diffuseLight, ambientLight, specularLight);
     lighting = diffuseLight + ambientLight;
 #endif
 
