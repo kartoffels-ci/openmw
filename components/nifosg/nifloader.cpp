@@ -2944,7 +2944,7 @@ namespace NifOsg
             }
 
             if (!mPushedSorter && !hasSortAlpha && mHasStencilProperty)
-                setBin_Traversal(node->getOrCreateStateSet());
+                setBinTraversal(node->getOrCreateStateSet());
 
             // mat = shareAttribute(mat);
 
