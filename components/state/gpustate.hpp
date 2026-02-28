@@ -25,10 +25,9 @@ namespace State
 
         void traverse(osg::NodeVisitor& nv) override;
 
+    private:
         mutable std::array<std::map<std::size_t, Material::GPUData>, 2> mQueuedGPUMaterials;
         mutable std::array<std::map<std::size_t, BindlessTextureHandle>, 2> mQueuedGPUTextures;
-
-    private:
         int open(osg::State& state, BindlessTextureHandle& handle);
         void close(osg::State& state, BindlessTextureHandle& handle);
         void makeGPUHandle(osg::State& state, BindlessTextureHandle& handle);
@@ -41,6 +40,8 @@ namespace State
         mutable unsigned int mSSBOTextures = 0;
         mutable size_t mBufferSize = 0;
         mutable size_t mTextureBufferSize = 0;
+        mutable std::map<std::size_t, BindlessTextureHandle> mPendingTextures;
+        mutable size_t mUploadCount = 0;
     };
 }
 

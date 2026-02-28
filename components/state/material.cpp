@@ -70,9 +70,6 @@ namespace State
 
     int Material::compare(const StateAttribute& sa) const
     {
-        if (sBindless)
-            return 0;
-
         COMPARE_StateAttribute_Types(Material, sa);
         COMPARE_StateAttribute_Parameter(mDiffuse);
         COMPARE_StateAttribute_Parameter(mAmbient);

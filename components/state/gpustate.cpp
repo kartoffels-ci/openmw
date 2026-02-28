@@ -1,5 +1,8 @@
 #include "gpustate.hpp"
 
+#include <chrono>
+#include <iomanip>
+
 #include <osg/State>
 
 #include <components/state/resourcemanager.hpp>
@@ -24,6 +27,8 @@ namespace State
         // Needs to map to the contextId, textures are resident per context
         if (handle.handle.has_value())
             return;
+
+        ++mUploadCount;
 
         const unsigned int contextId = state.getContextID();
 
@@ -71,6 +76,8 @@ namespace State
 
     void GPUState::drawImplementation(osg::RenderInfo& renderInfo) const
     {
+        auto drawStart = std::chrono::high_resolution_clock::now();
+
         osg::State& state = *renderInfo.getState();
         const osg::GLExtensions* ext = state.get<osg::GLExtensions>();
         const unsigned int frameId = state.getFrameStamp()->getFrameNumber() % 2;
@@ -117,27 +124,52 @@ namespace State
         ext->glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mSSBOMaterials);
         ext->glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
+        // Merge this frame's queued textures into the persistent pending queue
         auto& textures = mQueuedGPUTextures[frameId];
-
         if (!textures.empty())
         {
-            mTextures.resize(std::max(mTextures.size(), textures.rbegin()->first + 1));
+            mPendingTextures.insert(std::make_move_iterator(textures.begin()),
+                std::make_move_iterator(textures.end()));
+            textures.clear();
+        }
 
-            for (auto& [index, handle] : textures)
+        mUploadCount = 0;
+
+        if (!mPendingTextures.empty())
+        {
+            mTextures.resize(std::max(mTextures.size(), mPendingTextures.rbegin()->first + 1));
+
+            constexpr size_t maxUploadsPerFrame = 8;
+            size_t uploads = 0;
+
+            for (auto it = mPendingTextures.begin(); it != mPendingTextures.end(); )
             {
+                auto& [index, handle] = *it;
+                bool needsUpload = !handle.handle.has_value();
+
+                if (needsUpload && uploads >= maxUploadsPerFrame)
+                {
+                    ++it;
+                    continue;
+                }
+
                 if (handle.filename.empty())
                     Log(Debug::Error) << "Empty filename, this texture doesn't look right " << index;
+
                 const_cast<GPUState*>(this)->open(state, handle);
+
+                if (needsUpload)
+                    ++uploads;
+
+                it = mPendingTextures.erase(it);
             }
 
             ext->glBindBuffer(GL_SHADER_STORAGE_BUFFER, mSSBOTextures);
 
             size_t newSize = sizeof(std::uint64_t) * mTextures.size();
 
-            // If the buffer hasn't been initialized or size has changed, update it
             if (mTextureBufferSize == 0 || newSize > mTextureBufferSize)
             {
-                // Allocate new buffer size if the vector has grown or if it's uninitialized
                 ext->glBufferData(GL_SHADER_STORAGE_BUFFER, newSize, nullptr, GL_DYNAMIC_DRAW);
                 mTextureBufferSize = newSize;
             }
@@ -145,12 +177,19 @@ namespace State
             ext->glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, newSize, mTextures.data());
 
             ext->glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-            textures.clear();
         }
 
         ext->glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, mSSBOTextures);
         ext->glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+        auto drawEnd = std::chrono::high_resolution_clock::now();
+        double drawMs = std::chrono::duration<double, std::milli>(drawEnd - drawStart).count();
+
+        if (mUploadCount > 0 || drawMs > 5.0)
+            Log(Debug::Error) << "[GPUState] frame " << state.getFrameStamp()->getFrameNumber()
+                              << " uploads=" << mUploadCount
+                              << " pending=" << mPendingTextures.size()
+                              << " drawImpl=" << std::fixed << std::setprecision(1) << drawMs << "ms";
     }
 
     void GPUState::releaseGLObjects(osg::State* state) const {}
@@ -159,12 +198,10 @@ namespace State
     {
         if (nv.getVisitorType() == osg::NodeVisitor::UPDATE_VISITOR)
         {
-            size_t frameId = nv.getTraversalNumber() % 2;
-            mQueuedGPUMaterials[frameId] = std::move(mResourceManager->mQueuedMaterials);
-            mResourceManager->mQueuedMaterials = {};
-
-            mQueuedGPUTextures[frameId] = std::move(mResourceManager->mQueuedTextures);
-            mResourceManager->mQueuedTextures = {};
+            size_t frameId = nv.getFrameStamp()->getFrameNumber() % 2;
+            auto drained = mResourceManager->drainQueues();
+            mQueuedGPUMaterials[frameId] = std::move(drained.materials);
+            mQueuedGPUTextures[frameId] = std::move(drained.textures);
         }
     }
 }

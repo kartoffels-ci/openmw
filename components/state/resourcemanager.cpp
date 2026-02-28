@@ -53,4 +53,15 @@ namespace State
 
         return index;
     }
+
+    DrainedQueues ResourceManager::drainQueues()
+    {
+        std::unique_lock<std::mutex> lock(mMutex);
+        DrainedQueues result;
+        result.materials = std::move(mQueuedMaterials);
+        result.textures = std::move(mQueuedTextures);
+        mQueuedMaterials.clear();
+        mQueuedTextures.clear();
+        return result;
+    }
 }
