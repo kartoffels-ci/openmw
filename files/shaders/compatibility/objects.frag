@@ -81,7 +81,6 @@ varying vec4 passTangent;
 #include "lib/material/parallax.glsl"
 #include "lib/material/alpha.glsl"
 #include "lib/util/distortion.glsl"
-#include "lib/view/depth.glsl"
 #include "lib/material/colormodes.glsl"
 #include "lib/material/vertexcolors.glsl"
 #include "lib/core/fragment.h.glsl"
@@ -105,23 +104,9 @@ varying vec3 orthoDepthMapCoord;
 #endif
 
 uniform sampler2D opaqueDepthTex;
-uniform vec4 debugcolor = vec4(-1.0);
 
 void main()
 {
-    uint zTile = uint((log(abs(linearizeDepth(gl_FragCoord.z, near, far)) / near) * gridDepth) / log(8192 / near));
-    vec3 colors[8] = vec3[](
-    vec3(0, 0, 0),    vec3( 0,  0,  1), vec3( 0, 1, 0),  vec3(0, 1,  1),
-    vec3(1,  0,  0),  vec3( 1,  0,  1), vec3( 1, 1, 0),  vec3(1, 1, 1)
-    );
-    gl_FragData[0] = vec4(colors[uint(mod(float(zTile), 8.0))], 1.0);
-    // gl_FragData[0] = vec4(vec3(float(lightCount) / 64.0), 1.0);
-    // return;
-
-    if (debugcolor.x > 0) {
-        gl_FragData[0] = debugcolor;
-        return;
-    }
     Material material = getMaterial();
 
 #if @particleOcclusion
@@ -242,7 +227,7 @@ vec2 screenCoords = gl_FragCoord.xy / screenRes;
     vec3 specularColor = getSpecularColor(material).xyz;
 #endif
     vec3 diffuseLight, ambientLight, specularLight;
-    doLighting(gl_FragCoord.xyz, passViewPos, viewNormal, shininess, shadowing, diffuseLight, ambientLight, specularLight);
+    doLighting(passViewPos, viewNormal, shininess, shadowing, diffuseLight, ambientLight, specularLight);
     lighting = diffuseColor.xyz * diffuseLight + getAmbientColor(material).xyz * ambientLight + getEmissionColor(material).xyz * material.emissiveMult;
     specular = specularColor * specularLight * material.specStrength;
 #endif
