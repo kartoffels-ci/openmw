@@ -1,6 +1,10 @@
 #ifndef COMPONENTS_STATE_MATERIAL
 #define COMPONENTS_STATE_MATERIAL
 
+#include <algorithm>
+#include <array>
+#include <cstdint>
+
 #include <osg/StateAttribute>
 
 namespace osg

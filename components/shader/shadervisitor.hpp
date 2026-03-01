@@ -3,6 +3,7 @@
 
 #include <osg/NodeVisitor>
 #include <osg/Program>
+#include <osg/Texture2D>
 
 #include <components/state/material.hpp>
 
