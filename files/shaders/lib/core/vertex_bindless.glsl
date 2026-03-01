@@ -1,7 +1,7 @@
 #version 430 core
 
-#extension GL_NV_bindless_texture : require
-#extension GL_NV_gpu_shader5 : require
+#extension GL_ARB_bindless_texture : require
+#extension GL_ARB_gpu_shader_int64 : require
 
 #include "lib/material/bindings.glsl"
 #include "lib/material/material.glsl"

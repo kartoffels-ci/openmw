@@ -58,6 +58,7 @@
 #include <components/detournavigator/navigator.hpp>
 #include <components/detournavigator/navmeshcacheitem.hpp>
 
+#include <components/sceneutil/glextensions.hpp>
 #include <components/state/gpustate.hpp>
 
 #include "../mwworld/cellstore.hpp"
@@ -376,7 +377,24 @@ namespace MWRender
         bool reverseZ = SceneUtil::AutoDepth::isReversed();
         const SceneUtil::LightingMethod lightingMethod = Settings::shaders().mLightingMethod;
 
-        State::Material::setBindlessEnabled(Settings::shaders().mBindlessTextures);
+        if (Settings::shaders().mBindlessTextures)
+        {
+            const auto& exts = SceneUtil::getGLExtensions();
+            bool hasBindless = osg::isGLExtensionSupported(exts.contextID, "GL_ARB_bindless_texture");
+            bool hasInt64 = osg::isGLExtensionSupported(exts.contextID, "GL_ARB_gpu_shader_int64");
+            if (hasBindless && hasInt64)
+            {
+                State::Material::setBindlessEnabled(true);
+                Log(Debug::Info) << "Bindless textures enabled (GL_ARB_bindless_texture + GL_ARB_gpu_shader_int64)";
+            }
+            else
+            {
+                Log(Debug::Warning) << "Bindless textures requested but not supported by GPU:"
+                    << (!hasBindless ? " missing GL_ARB_bindless_texture" : "")
+                    << (!hasInt64 ? " missing GL_ARB_gpu_shader_int64" : "")
+                    << ". Falling back to traditional rendering.";
+            }
+        }
 
         resourceSystem->getSceneManager()->setParticleSystemMask(MWRender::Mask_ParticleSystem);
 
@@ -498,7 +516,7 @@ namespace MWRender
         globalDefines["numViews"] = "1";
         globalDefines["disableNormals"] = "1";
 
-        globalDefines["legacyBindings"] = Settings::shaders().mBindlessTextures ? "0" : "1";
+        globalDefines["legacyBindings"] = State::Material::getBindlessEnabled() ? "0" : "1";
         globalDefines["diffuseMap"] = "0";
         globalDefines["darkMap"] = "0";
         globalDefines["detailMap"] = "0";
@@ -668,7 +686,7 @@ namespace MWRender
             mRootNode->getOrCreateStateSet()->setAttributeAndModes(clipcontrol, osg::StateAttribute::ON);
         }
 
-        if (Settings::shaders().mBindlessTextures)
+        if (State::Material::getBindlessEnabled())
         {
             mRootNode->insertChild(0, new State::GPUState(mResourceSystem->getSceneManager()->getResourceManager()));
             mRootNode->getChild(0)->setNodeMask(Mask_RenderToTexture);
