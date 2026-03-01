@@ -3,6 +3,7 @@
 
 #include <array>
 #include <map>
+#include <memory>
 #include <unordered_set>
 
 #include <osg/Drawable>
