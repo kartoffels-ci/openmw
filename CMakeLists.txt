@@ -82,7 +82,7 @@ message(STATUS "Configuring OpenMW...")
 set(OPENMW_VERSION_MAJOR 0)
 set(OPENMW_VERSION_MINOR 51)
 set(OPENMW_VERSION_RELEASE 0)
-set(OPENMW_LUA_API_REVISION 111)
+set(OPENMW_LUA_API_REVISION 113)
 set(OPENMW_POSTPROCESSING_API_REVISION 4)
 
 set(OPENMW_VERSION_COMMITHASH "")
@@ -644,6 +644,14 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" OR CMAKE_CXX_COMPILER_FRONTEND_VARIANT
 
     foreach(d ${WARNINGS_DISABLE})
         add_compile_options("/wd${d}")
+    endforeach(d)
+
+    set(WARNINGS_EXTRA
+        4855 # implicit capture of 'this' via '[=]' is deprecated in 'version'
+        )
+
+    foreach(d ${WARNINGS_EXTRA})
+        add_compile_options("/w1${d}")
     endforeach(d)
 
     if(OPENMW_MSVC_WERROR)

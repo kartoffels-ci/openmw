@@ -2039,7 +2039,8 @@ namespace MWMechanics
             = MWBase::Environment::get().getESMStore()->get<ESM::Skill>().find(ESM::Skill::Acrobatics);
         MWMechanics::NpcStats& stats = actor.getClass().getNpcStats(actor);
         auto& skill = stats.getSkill(acrobatics->mId);
-        skill.setModifier(acrobatics->mWerewolfValue - skill.getModified());
+        skill.setBase(skill.getBase(), true);
+        skill.setModifier(acrobatics->mWerewolfValue - skill.getBase());
     }
 
     void MechanicsManager::cleanupSummonedCreature(ESM::RefNum creature)
@@ -2066,11 +2067,6 @@ namespace MWMechanics
     GreetingState MechanicsManager::getGreetingState(const MWWorld::Ptr& ptr) const
     {
         return mActors.getGreetingState(ptr);
-    }
-
-    bool MechanicsManager::isTurningToPlayer(const MWWorld::Ptr& ptr) const
-    {
-        return mActors.isTurningToPlayer(ptr);
     }
 
     void MechanicsManager::fastForwardAi() const

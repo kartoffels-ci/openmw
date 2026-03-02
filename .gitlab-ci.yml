@@ -553,15 +553,12 @@ Ubuntu_GCC_integration_tests_asan:
   rules:
     - if: $CI_PROJECT_ID != "7107382"
       when: never
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-      when: manual
+    # Merge request event rule is architecture-specific
+    # Unlike ARM64, AMD64 job is manual non-blocking as it's seldom useful
     - if: $CI_PIPELINE_SOURCE == "push" || $CI_PIPELINE_SOURCE == "schedule"
   image: macos-15-xcode-16
   tags:
     - saas-macos-medium-m1
-  cache:
-    paths:
-    - ccache/
   script:
     - CI/before_install.macos.sh
     - brew install ccache
@@ -596,8 +593,18 @@ Ubuntu_GCC_integration_tests_asan:
 
 macOS15_Xcode16_amd64:
   extends: .MacOS
+  rules:
+    - !reference [.MacOS, rules]
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: manual
+      allow_failure: true
   cache:
-    key: macOS15_Xcode16_amd64.v2
+    key:
+      prefix: macOS15_Xcode16_amd64.v3
+      files:
+        - CI/macos/deps_versions.sh
+    paths:
+      - ccache/
   variables:
     CCACHE_SIZE: 3G
     DMG_IDENTIFIER: amd64
@@ -608,8 +615,16 @@ macOS15_Xcode16_amd64:
 
 macOS15_Xcode16_arm64:
   extends: .MacOS
+  rules:
+    - !reference [.MacOS, rules]
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   cache:
-    key: macOS15_Xcode16_arm64.v2
+    key:
+      prefix: macOS15_Xcode16_arm64.v3
+      files:
+        - CI/macos/deps_versions.sh
+    paths:
+      - ccache/
   variables:
     DMG_IDENTIFIER: arm64
     CCACHE_SIZE: 3G
