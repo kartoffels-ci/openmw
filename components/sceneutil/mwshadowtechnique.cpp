@@ -1127,9 +1127,19 @@ void MWShadowTechnique::cull(osgUtil::CullVisitor& cv)
     // because shadow cameras have post-adjustment projection matrices, but assignValidRegionSettings
     // needs pre-adjustment projections (the adjustment happens between the two assign calls
     // in the UPDATE path).
+    // Staleness cap: force a shadow update if the shadow map is too old.
+    // At low FPS the skip gap grows (e.g. 133ms at 15fps with interval=2),
+    // making stale shadows noticeable. Cap at 40ms — this lets the skip
+    // work at 30+ fps where it helps, and backs off when FPS is already low.
+    constexpr double maxShadowStaleness = 0.040;
+    double currentTime = cv.getFrameStamp()->getReferenceTime();
+    bool tooStale = (vdd->_lastShadowCullReferenceTime > 0.0)
+        && (currentTime - vdd->_lastShadowCullReferenceTime) > maxShadowStaleness;
+
     if (_shadowUpdateInterval > 1
         && vdd->_framesSinceLastShadowCull > 0
-        && vdd->_framesSinceLastShadowCull < _shadowUpdateInterval)
+        && vdd->_framesSinceLastShadowCull < _shadowUpdateInterval
+        && !tooStale)
     {
         ++vdd->_framesSinceLastShadowCull;
 
@@ -1151,6 +1161,7 @@ void MWShadowTechnique::cull(osgUtil::CullVisitor& cv)
         return;
     }
     vdd->_framesSinceLastShadowCull = 1;
+    vdd->_lastShadowCullReferenceTime = currentTime;
 
     if (cv.getComputeNearFarMode()!=osg::CullSettings::DO_NOT_COMPUTE_NEAR_FAR)
     {
@@ -2698,6 +2709,19 @@ bool MWShadowTechnique::cropShadowCameraToMainFrustum(Frustum& frustum, osg::Cam
     }
     else
         return false;
+
+    // Inflate shadow frustum slightly to provide margin for temporal reuse.
+    // On skip frames, the camera moves but the shadow map is frozen — this
+    // extra margin prevents shadows popping at screen edges.
+    if (_frustumExpansionBase > 0.0 || _frustumExpansionPerSkip > 0.0)
+    {
+        double margin = _frustumExpansionBase
+            + _frustumExpansionPerSkip * osg::maximum(0u, _shadowUpdateInterval - 1);
+        xMin = osg::maximum(-1.0, xMin - margin);
+        xMax = osg::minimum( 1.0, xMax + margin);
+        yMin = osg::maximum(-1.0, yMin - margin);
+        yMax = osg::minimum( 1.0, yMax + margin);
+    }
 
     // Snap shadow frustum to texel grid for temporal stability.
     // Range stays fixed, only the origin snaps to discrete texel-sized steps.

@@ -236,6 +236,7 @@ namespace SceneUtil {
 
             unsigned int _numValidShadows;
             unsigned int _framesSinceLastShadowCull = 0;
+            double _lastShadowCullReferenceTime = 0.0;
         };
 
         virtual ViewDependentData* createViewDependentData(osgUtil::CullVisitor* cv);
@@ -273,6 +274,8 @@ namespace SceneUtil {
         void setWorldMask(unsigned int worldMask) { _worldMask = worldMask; }
 
         void setShadowUpdateInterval(unsigned int interval) { _shadowUpdateInterval = interval; }
+
+        void setFrustumExpansion(double base, double perSkip) { _frustumExpansionBase = base; _frustumExpansionPerSkip = perSkip; }
 
         osg::ref_ptr<osg::StateSet> getOrCreateShadowsBinStateSet();
 
@@ -313,6 +316,9 @@ namespace SceneUtil {
         unsigned int                            _worldMask = ~0u;
 
         unsigned int                            _shadowUpdateInterval = 1;
+
+        double                                  _frustumExpansionBase = 0.0;
+        double                                  _frustumExpansionPerSkip = 0.0;
 
         class DebugHUD final : public osg::Referenced
         {
