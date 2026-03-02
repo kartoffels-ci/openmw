@@ -1593,6 +1593,37 @@ namespace MWRender
                         hud->setVisible(false);
                 }
             }
+            else if (it->first == "Shadows")
+            {
+                mViewer->stopThreading();
+
+                mShadowManager->setupShadowSettings(
+                    Settings::shadows(), mResourceSystem->getSceneManager()->getShaderManager());
+
+                // Recompute casting masks from current settings
+                int shadowCastingTraversalMask = Mask_Scene;
+                if (Settings::shadows().mActorShadows)
+                    shadowCastingTraversalMask |= Mask_Actor;
+                if (Settings::shadows().mPlayerShadows)
+                    shadowCastingTraversalMask |= Mask_Player;
+
+                int indoorShadowCastingTraversalMask = shadowCastingTraversalMask;
+                if (Settings::shadows().mObjectShadows)
+                    shadowCastingTraversalMask |= (Mask_Object | Mask_Static);
+                if (Settings::shadows().mTerrainShadows)
+                    shadowCastingTraversalMask |= Mask_Terrain;
+
+                mShadowManager->updateCastingMasks(shadowCastingTraversalMask, indoorShadowCastingTraversalMask);
+
+                // Update global shader defines (soft shadows, resolution, cascade count)
+                auto defines = mResourceSystem->getSceneManager()->getShaderManager().getGlobalDefines();
+                auto shadowDefines = mShadowManager->getShadowDefines(Settings::shadows());
+                for (const auto& [name, value] : shadowDefines)
+                    defines[name] = value;
+                mResourceSystem->getSceneManager()->getShaderManager().setGlobalDefines(defines);
+
+                mViewer->startThreading();
+            }
         }
 
         if (updateProjection)
