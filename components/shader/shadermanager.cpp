@@ -689,11 +689,13 @@ namespace Shader
 
     int ShaderManager::reserveGlobalTextureUnits(Slot slot, int count)
     {
-        // TODO: Reuse units when count increase forces reallocation
-        // TODO: Warn if trampling on the ~8 units needed by model textures
         auto unit = mReservedTextureUnitsBySlot[static_cast<int>(slot)];
         if (unit.index >= 0 && unit.count >= count)
             return unit.index;
+
+        // Release old units before reallocating (supports runtime cascade count changes)
+        if (unit.index >= 0)
+            mReservedTextureUnits -= unit.count;
 
         if (getAvailableTextureUnits() < count + 1)
             throw std::runtime_error("Can't reserve texture unit; no available units");
