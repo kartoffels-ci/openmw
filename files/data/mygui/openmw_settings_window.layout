@@ -718,6 +718,170 @@
                             <Property key="Caption" value="#{Interface:Reset}"/>
                         </Widget>
                     </Widget>
+                    <Widget type="TabItem">
+                        <Property key="Caption" value=" #{OMWEngine:Shadows} "/>
+                        <Widget type="VBox" position_real="0 0 1 1" align="Stretch">
+
+                            <!-- Enable Shadows -->
+                            <Widget type="HBox" align="Stretch">
+                                <UserString key="HStretch" value="true"/>
+                                <UserString key="VStretch" value="false"/>
+                                <Widget type="AutoSizedButton" skin="MW_Button">
+                                    <UserString key="SettingCategory" value="Shadows"/>
+                                    <UserString key="SettingName" value="enable shadows"/>
+                                    <UserString key="SettingType" value="CheckButton"/>
+                                </Widget>
+                                <Widget type="AutoSizedTextBox" skin="SandText">
+                                    <Property key="Caption" value="#{OMWEngine:Shadows}"/>
+                                    <UserString key="ToolTipType" value="Layout"/>
+                                    <UserString key="ToolTipLayout" value="TextToolTip"/>
+                                    <UserString key="Caption_Text" value="#{OMWEngine:ShadowsTooltip}"/>
+                                </Widget>
+                            </Widget>
+
+                            <!-- Soft Shadows -->
+                            <Widget type="HBox" align="Stretch">
+                                <UserString key="HStretch" value="true"/>
+                                <UserString key="VStretch" value="false"/>
+                                <Widget type="AutoSizedButton" skin="MW_Button">
+                                    <UserString key="SettingCategory" value="Shadows"/>
+                                    <UserString key="SettingName" value="soft shadows"/>
+                                    <UserString key="SettingType" value="CheckButton"/>
+                                </Widget>
+                                <Widget type="AutoSizedTextBox" skin="SandText">
+                                    <Property key="Caption" value="#{OMWEngine:ShadowSoftShadows}"/>
+                                    <UserString key="ToolTipType" value="Layout"/>
+                                    <UserString key="ToolTipLayout" value="TextToolTip"/>
+                                    <UserString key="Caption_Text" value="#{OMWEngine:ShadowSoftShadowsTooltip}"/>
+                                </Widget>
+                            </Widget>
+
+                            <!-- Shadow Update Interval -->
+                            <Widget type="HBox" align="Stretch">
+                                <UserString key="HStretch" value="true"/>
+                                <UserString key="VStretch" value="false"/>
+                                <Widget type="AutoSizedTextBox" skin="SandText">
+                                    <Property key="Caption" value="#{OMWEngine:ShadowUpdateInterval}"/>
+                                    <UserString key="ToolTipType" value="Layout"/>
+                                    <UserString key="ToolTipLayout" value="TextToolTip"/>
+                                    <UserString key="Caption_Text" value="#{OMWEngine:ShadowUpdateIntervalTooltip}"/>
+                                </Widget>
+                                <Widget type="ComboBox" skin="MW_ComboBox" position="0 0 80 24" align="Right Top" name="ShadowUpdateInterval">
+                                    <Property key="ReadOnly" value="true"/>
+                                    <Property key="AddItem" value="Off"/>
+                                    <Property key="AddItem" value="2"/>
+                                    <Property key="AddItem" value="3"/>
+                                    <Property key="AddItem" value="4"/>
+                                </Widget>
+                            </Widget>
+
+                            <!-- Shadow Map Resolution -->
+                            <Widget type="HBox" align="Stretch">
+                                <UserString key="HStretch" value="true"/>
+                                <UserString key="VStretch" value="false"/>
+                                <Widget type="AutoSizedTextBox" skin="SandText">
+                                    <Property key="Caption" value="#{OMWEngine:ShadowMapResolution}"/>
+                                    <UserString key="ToolTipType" value="Layout"/>
+                                    <UserString key="ToolTipLayout" value="TextToolTip"/>
+                                    <UserString key="Caption_Text" value="#{OMWEngine:ShadowMapResolutionTooltip}"/>
+                                </Widget>
+                                <Widget type="ComboBox" skin="MW_ComboBox" position="0 0 80 24" align="Right Top" name="ShadowResolution">
+                                    <Property key="ReadOnly" value="true"/>
+                                    <Property key="AddItem" value="256"/>
+                                    <Property key="AddItem" value="512"/>
+                                    <Property key="AddItem" value="1024"/>
+                                    <Property key="AddItem" value="2048"/>
+                                    <Property key="AddItem" value="4096"/>
+                                </Widget>
+                            </Widget>
+
+                            <!-- Actor Shadows -->
+                            <Widget type="HBox" align="Stretch">
+                                <UserString key="HStretch" value="true"/>
+                                <UserString key="VStretch" value="false"/>
+                                <Widget type="AutoSizedButton" skin="MW_Button">
+                                    <UserString key="SettingCategory" value="Shadows"/>
+                                    <UserString key="SettingName" value="actor shadows"/>
+                                    <UserString key="SettingType" value="CheckButton"/>
+                                </Widget>
+                                <Widget type="AutoSizedTextBox" skin="SandText">
+                                    <Property key="Caption" value="#{OMWEngine:ShadowActors}"/>
+                                    <UserString key="ToolTipType" value="Layout"/>
+                                    <UserString key="ToolTipLayout" value="TextToolTip"/>
+                                    <UserString key="Caption_Text" value="#{OMWEngine:ShadowActorsTooltip}"/>
+                                </Widget>
+                            </Widget>
+
+                            <!-- Player Shadow -->
+                            <Widget type="HBox" align="Stretch">
+                                <UserString key="HStretch" value="true"/>
+                                <UserString key="VStretch" value="false"/>
+                                <Widget type="AutoSizedButton" skin="MW_Button">
+                                    <UserString key="SettingCategory" value="Shadows"/>
+                                    <UserString key="SettingName" value="player shadows"/>
+                                    <UserString key="SettingType" value="CheckButton"/>
+                                </Widget>
+                                <Widget type="AutoSizedTextBox" skin="SandText">
+                                    <Property key="Caption" value="#{OMWEngine:ShadowPlayer}"/>
+                                    <UserString key="ToolTipType" value="Layout"/>
+                                    <UserString key="ToolTipLayout" value="TextToolTip"/>
+                                    <UserString key="Caption_Text" value="#{OMWEngine:ShadowPlayerTooltip}"/>
+                                </Widget>
+                            </Widget>
+
+                            <!-- Object Shadows -->
+                            <Widget type="HBox" align="Stretch">
+                                <UserString key="HStretch" value="true"/>
+                                <UserString key="VStretch" value="false"/>
+                                <Widget type="AutoSizedButton" skin="MW_Button">
+                                    <UserString key="SettingCategory" value="Shadows"/>
+                                    <UserString key="SettingName" value="object shadows"/>
+                                    <UserString key="SettingType" value="CheckButton"/>
+                                </Widget>
+                                <Widget type="AutoSizedTextBox" skin="SandText">
+                                    <Property key="Caption" value="#{OMWEngine:ShadowObjects}"/>
+                                    <UserString key="ToolTipType" value="Layout"/>
+                                    <UserString key="ToolTipLayout" value="TextToolTip"/>
+                                    <UserString key="Caption_Text" value="#{OMWEngine:ShadowObjectsTooltip}"/>
+                                </Widget>
+                            </Widget>
+
+                            <!-- Terrain Shadows -->
+                            <Widget type="HBox" align="Stretch">
+                                <UserString key="HStretch" value="true"/>
+                                <UserString key="VStretch" value="false"/>
+                                <Widget type="AutoSizedButton" skin="MW_Button">
+                                    <UserString key="SettingCategory" value="Shadows"/>
+                                    <UserString key="SettingName" value="terrain shadows"/>
+                                    <UserString key="SettingType" value="CheckButton"/>
+                                </Widget>
+                                <Widget type="AutoSizedTextBox" skin="SandText">
+                                    <Property key="Caption" value="#{OMWEngine:ShadowTerrain}"/>
+                                    <UserString key="ToolTipType" value="Layout"/>
+                                    <UserString key="ToolTipLayout" value="TextToolTip"/>
+                                    <UserString key="Caption_Text" value="#{OMWEngine:ShadowTerrainTooltip}"/>
+                                </Widget>
+                            </Widget>
+
+                            <!-- Indoor Shadows -->
+                            <Widget type="HBox" align="Stretch">
+                                <UserString key="HStretch" value="true"/>
+                                <UserString key="VStretch" value="false"/>
+                                <Widget type="AutoSizedButton" skin="MW_Button">
+                                    <UserString key="SettingCategory" value="Shadows"/>
+                                    <UserString key="SettingName" value="enable indoor shadows"/>
+                                    <UserString key="SettingType" value="CheckButton"/>
+                                </Widget>
+                                <Widget type="AutoSizedTextBox" skin="SandText">
+                                    <Property key="Caption" value="#{OMWEngine:ShadowIndoor}"/>
+                                    <UserString key="ToolTipType" value="Layout"/>
+                                    <UserString key="ToolTipLayout" value="TextToolTip"/>
+                                    <UserString key="Caption_Text" value="#{OMWEngine:ShadowIndoorTooltip}"/>
+                                </Widget>
+                            </Widget>
+
+                        </Widget>
+                    </Widget>
                 </Widget>
             </Widget>
             <Widget type="TabItem">
