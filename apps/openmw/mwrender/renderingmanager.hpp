@@ -50,6 +50,7 @@ namespace ESM
 namespace Terrain
 {
     class World;
+    class TerrainOccluder;
 }
 
 namespace Fallback
@@ -59,6 +60,7 @@ namespace Fallback
 
 namespace SceneUtil
 {
+    class OcclusionCuller;
     class ShadowManager;
     class WorkQueue;
     class LightManager;
@@ -100,6 +102,7 @@ namespace MWRender
     class Water;
     class TerrainStorage;
     class LandManager;
+    class SceneOcclusionCallback;
     class NavMesh;
     class ActorsPaths;
     class RecastMesh;
@@ -333,6 +336,9 @@ namespace MWRender
         std::unique_ptr<ScreenshotManager> mScreenshotManager;
         std::unique_ptr<EffectManager> mEffectManager;
         std::unique_ptr<SceneUtil::ShadowManager> mShadowManager;
+        osg::ref_ptr<SceneUtil::OcclusionCuller> mOcclusionCuller;
+        osg::ref_ptr<SceneOcclusionCallback> mSceneOcclusionCallback;
+        std::unique_ptr<Terrain::TerrainOccluder> mTerrainOccluder;
         osg::ref_ptr<PostProcessor> mPostProcessor;
         osg::ref_ptr<NpcAnimation> mPlayerAnimation;
         osg::ref_ptr<SceneUtil::PositionAttitudeTransform> mPlayerNode;
