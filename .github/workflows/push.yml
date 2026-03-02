@@ -9,7 +9,6 @@ concurrency:
 
 env:
   BUILD_TYPE: RelWithDebInfo
-  VCPKG_DEPS_TAG: "2026-01-20"
 
 jobs:
   Ubuntu:
@@ -59,7 +58,6 @@ jobs:
     uses: ./.github/workflows/windows.yml
     with:
       image: "2022"
-      vcpkg-deps-tag: "2026-01-20"
       build-type: RelWithDebInfo
 
   macOS:
