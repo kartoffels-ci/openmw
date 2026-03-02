@@ -3,6 +3,7 @@
 #include <cerrno>
 #include <chrono>
 #include <future>
+#include <iomanip>
 #include <system_error>
 
 #include <osgDB/ReaderWriter>
@@ -351,7 +352,13 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
     // if there is a separate Lua thread, it starts the update now
     mLuaWorker->allowUpdate(frameStart, frameNumber, *stats);
 
+    auto renderStart = std::chrono::high_resolution_clock::now();
     mViewer->renderingTraversals();
+    auto renderEnd = std::chrono::high_resolution_clock::now();
+    double renderMs = std::chrono::duration<double, std::milli>(renderEnd - renderStart).count();
+    if (renderMs > 16.0)
+        Log(Debug::Error) << "[Frame] " << frameNumber
+                          << " renderingTraversals=" << std::fixed << std::setprecision(1) << renderMs << "ms";
 
     mLuaWorker->finishUpdate(frameStart, frameNumber, *stats);
 

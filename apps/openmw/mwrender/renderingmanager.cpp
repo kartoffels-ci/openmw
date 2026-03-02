@@ -1,6 +1,8 @@
 #include "renderingmanager.hpp"
 
+#include <chrono>
 #include <cstdlib>
+#include <iomanip>
 #include <limits>
 
 #include <osg/ClipControl>
@@ -58,6 +60,9 @@
 #include <components/detournavigator/navigator.hpp>
 #include <components/detournavigator/navmeshcacheitem.hpp>
 
+#include <components/sceneutil/glextensions.hpp>
+#include <components/state/gpustate.hpp>
+
 #include "../mwworld/cellstore.hpp"
 #include "../mwworld/class.hpp"
 #include "../mwworld/groundcoverstore.hpp"
@@ -89,6 +94,50 @@
 #include "util.hpp"
 #include "vismask.hpp"
 #include "water.hpp"
+
+namespace
+{
+    // InitialDrawCallback fires on the draw thread AFTER Renderer::compile() (ICO)
+    // and flushDeletedGLObjects(), but BEFORE render stages. Records the timestamp.
+    // FinalDrawCallback fires after all render stages complete.
+    // The gap (Initial → Final) = render stages time.
+    // Compare with [Frame] renderingTraversals to isolate compile/cull/flush time:
+    //   compile+cull+flush ≈ renderingTraversals - renderStages
+    class DrawTimingCallback : public osg::Camera::DrawCallback
+    {
+    public:
+        void operator()(osg::RenderInfo& renderInfo) const override
+        {
+            mInitialTime = std::chrono::high_resolution_clock::now();
+            mFrame = renderInfo.getState()->getFrameStamp()->getFrameNumber();
+        }
+
+        mutable std::chrono::high_resolution_clock::time_point mInitialTime;
+        mutable unsigned int mFrame = 0;
+    };
+
+    class DrawTimingFinalCallback : public osg::Camera::DrawCallback
+    {
+    public:
+        DrawTimingFinalCallback(DrawTimingCallback* initial)
+            : mInitial(initial)
+        {
+        }
+
+        void operator()(osg::RenderInfo& renderInfo) const override
+        {
+            auto now = std::chrono::high_resolution_clock::now();
+            double drawMs = std::chrono::duration<double, std::milli>(now - mInitial->mInitialTime).count();
+
+            if (drawMs > 16.0)
+                Log(Debug::Error) << "[Draw] frame " << mInitial->mFrame
+                                  << " renderStages=" << std::fixed << std::setprecision(1) << drawMs << "ms";
+        }
+
+    private:
+        DrawTimingCallback* mInitial;
+    };
+}
 
 namespace MWRender
 {
@@ -331,6 +380,25 @@ namespace MWRender
         bool reverseZ = SceneUtil::AutoDepth::isReversed();
         const SceneUtil::LightingMethod lightingMethod = Settings::shaders().mLightingMethod;
 
+        if (Settings::shaders().mBindlessTextures)
+        {
+            const auto& exts = SceneUtil::getGLExtensions();
+            bool hasBindless = osg::isGLExtensionSupported(exts.contextID, "GL_ARB_bindless_texture");
+            bool hasInt64 = osg::isGLExtensionSupported(exts.contextID, "GL_ARB_gpu_shader_int64");
+            if (hasBindless && hasInt64)
+            {
+                State::Material::setBindlessEnabled(true);
+                Log(Debug::Info) << "Bindless textures enabled (GL_ARB_bindless_texture + GL_ARB_gpu_shader_int64)";
+            }
+            else
+            {
+                Log(Debug::Warning) << "Bindless textures requested but not supported by GPU:"
+                    << (!hasBindless ? " missing GL_ARB_bindless_texture" : "")
+                    << (!hasInt64 ? " missing GL_ARB_gpu_shader_int64" : "")
+                    << ". Falling back to traditional rendering.";
+            }
+        }
+
         resourceSystem->getSceneManager()->setParticleSystemMask(MWRender::Mask_ParticleSystem);
 
         // Figure out which pipeline must be used by default and inform the user
@@ -451,6 +519,18 @@ namespace MWRender
         globalDefines["numViews"] = "1";
         globalDefines["disableNormals"] = "1";
 
+        globalDefines["legacyBindings"] = State::Material::getBindlessEnabled() ? "0" : "1";
+        globalDefines["diffuseMap"] = "0";
+        globalDefines["darkMap"] = "0";
+        globalDefines["detailMap"] = "0";
+        globalDefines["decalMap"] = "0";
+        globalDefines["emissiveMap"] = "0";
+        globalDefines["normalMap"] = "0";
+        globalDefines["envMap"] = "0";
+        globalDefines["specularMap"] = "0";
+        globalDefines["bumpMap"] = "0";
+        globalDefines["glossMap"] = "0";
+
         for (auto itr = lightDefines.begin(); itr != lightDefines.end(); itr++)
             globalDefines[itr->first] = itr->second;
 
@@ -561,6 +641,11 @@ namespace MWRender
 
         mCamera = std::make_unique<Camera>(mViewer->getCamera());
 
+        // Draw thread timing diagnostics
+        auto* initialCb = new DrawTimingCallback;
+        mViewer->getCamera()->setInitialDrawCallback(initialCb);
+        mViewer->getCamera()->setFinalDrawCallback(new DrawTimingFinalCallback(initialCb));
+
         mScreenshotManager = std::make_unique<ScreenshotManager>(viewer);
 
         mViewer->setLightingMode(osgViewer::View::NO_LIGHT);
@@ -639,6 +724,12 @@ namespace MWRender
                 = new osg::ClipControl(osg::ClipControl::LOWER_LEFT, osg::ClipControl::ZERO_TO_ONE);
             mRootNode->getOrCreateStateSet()->setAttributeAndModes(new SceneUtil::AutoDepth, osg::StateAttribute::ON);
             mRootNode->getOrCreateStateSet()->setAttributeAndModes(clipcontrol, osg::StateAttribute::ON);
+        }
+
+        if (State::Material::getBindlessEnabled())
+        {
+            mRootNode->insertChild(0, new State::GPUState(mResourceSystem->getSceneManager()->getResourceManager()));
+            mRootNode->getChild(0)->setNodeMask(Mask_RenderToTexture);
         }
 
         SceneUtil::setCameraClearDepth(mViewer->getCamera());

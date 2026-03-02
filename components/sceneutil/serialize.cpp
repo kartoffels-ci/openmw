@@ -13,6 +13,8 @@
 #include <components/sceneutil/skeleton.hpp>
 #include <components/sceneutil/texturetype.hpp>
 
+#include <components/state/material.hpp>
+
 namespace SceneUtil
 {
 
@@ -144,6 +146,16 @@ namespace SceneUtil
         TextureTypeSerializer()
             : osgDB::ObjectWrapper(createInstanceFunc<SceneUtil::TextureType>, "SceneUtil::TextureType",
                 "osg::Object osg::StateAttribute SceneUtil::TextureType")
+        {
+        }
+    };
+
+    class MaterialSerializer : public osgDB::ObjectWrapper
+    {
+    public:
+        MaterialSerializer()
+            : osgDB::ObjectWrapper(createInstanceFunc<State::Material>, "State::BindlessMaterial",
+                "osg::Object osg::StateAttribute State::Material")
         {
         }
     };
