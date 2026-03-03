@@ -1,7 +1,9 @@
 #include "sky.hpp"
 
 #include <osg/Depth>
+#include <osg/Geometry>
 #include <osg/PositionAttitudeTransform>
+#include <osg/Texture2D>
 
 #include <osgParticle/BoxPlacer>
 #include <osgParticle/ModularEmitter>
@@ -326,6 +328,46 @@ namespace MWRender
         ModVertexAlphaVisitor modStars(ModVertexAlphaVisitor::Stars);
         atmosphereNight->accept(modStars);
         mAtmosphereNightUpdater = new AtmosphereNightUpdater(mSceneManager->getImageManager(), forceShaders);
+
+        // When bindless textures are enabled, the ShaderVisitor strips textures from the NIF's
+        // geometry StateSets (they go into the SSBO instead). But the sky uses its own non-bindless
+        // shader, so it needs the texture on a traditional sampler unit. Recover the stripped
+        // texture from the user data where the ShaderVisitor stashed it.
+        if (State::Material::getBindlessEnabled())
+        {
+            struct FindStrippedTexture : public osg::NodeVisitor
+            {
+                osg::ref_ptr<osg::Texture2D> result;
+                FindStrippedTexture()
+                    : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN)
+                {
+                }
+                void apply(osg::Node& node) override
+                {
+                    if (!result)
+                    {
+                        if (auto* udc = node.getUserDataContainer())
+                        {
+                            for (unsigned int i = 0; i < udc->getNumUserObjects(); ++i)
+                            {
+                                if (auto* tex = dynamic_cast<osg::Texture2D*>(udc->getUserObject(i)))
+                                {
+                                    result = tex;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (!result)
+                        traverse(node);
+                }
+            };
+            FindStrippedTexture finder;
+            atmosphereNight->accept(finder);
+            if (finder.result)
+                mAtmosphereNightUpdater->setDiffuseTexture(std::move(finder.result));
+        }
+
         atmosphereNight->addUpdateCallback(mAtmosphereNightUpdater);
 
         mSun = std::make_unique<Sun>(mEarlyRenderBinRoot, *mSceneManager);

@@ -311,6 +311,12 @@ namespace Shader
             if (!writableStateSet)
                 writableStateSet = getWritableStateSet(node);
 
+            // Stash a ref on the node so non-bindless shaders (e.g. sky) can recover the texture
+            // after it's been stripped from the StateSet. UserDataContainer is shallow-copied by
+            // getInstance(), so clones inherit the refs.
+            if (ref)
+                node.getOrCreateUserDataContainer()->addUserObject(ref.get());
+
             writableStateSet->setTextureMode(unit, GL_TEXTURE_2D, osg::StateAttribute::OFF);
             writableStateSet->removeTextureAttribute(unit, osg::StateAttribute::TEXTURE);
         };
@@ -557,9 +563,40 @@ namespace Shader
                         if (State::Material* mat = dynamic_cast<State::Material*>(it->second.first.get()))
                         {
                             mRequirements.back().mMaterial = mat;
-                            // if (!writableStateSet)
-                            //     writableStateSet = getWritableStateSet(node);
-                            // writableStateSet->removeAttribute(osg::StateAttribute::MATERIAL);
+                        }
+                        else if (const osg::Material* mat
+                                 = dynamic_cast<const osg::Material*>(it->second.first.get()))
+                        {
+                            osg::ref_ptr<State::Material> converted = new State::Material;
+                            converted->setDiffuse(mat->getDiffuse(osg::Material::FRONT_AND_BACK));
+                            converted->setAmbient(mat->getAmbient(osg::Material::FRONT_AND_BACK));
+                            converted->setSpecular(mat->getSpecular(osg::Material::FRONT_AND_BACK));
+                            converted->setEmission(mat->getEmission(osg::Material::FRONT_AND_BACK));
+                            converted->setShininess(mat->getShininess(osg::Material::FRONT_AND_BACK));
+
+                            switch (mat->getColorMode())
+                            {
+                                case osg::Material::OFF:
+                                    converted->setColorMode(State::ColorModes::ColorMode_None);
+                                    break;
+                                case osg::Material::EMISSION:
+                                    converted->setColorMode(State::ColorModes::ColorMode_Emission);
+                                    break;
+                                case osg::Material::AMBIENT:
+                                    converted->setColorMode(State::ColorModes::ColorMode_Ambient);
+                                    break;
+                                case osg::Material::DIFFUSE:
+                                    converted->setColorMode(State::ColorModes::ColorMode_Diffuse);
+                                    break;
+                                case osg::Material::SPECULAR:
+                                    converted->setColorMode(State::ColorModes::ColorMode_Specular);
+                                    break;
+                                default:
+                                    converted->setColorMode(State::ColorModes::ColorMode_AmbientAndDiffuse);
+                                    break;
+                            }
+
+                            mRequirements.back().mMaterial = converted;
                         }
                     }
                 }
