@@ -2,8 +2,11 @@
 
 #include <chrono>
 #include <iomanip>
+#include <limits>
 
 #include <osg/State>
+#include <osg/Image>
+#include <osg/Texture2D>
 
 #include <components/state/resourcemanager.hpp>
 
@@ -55,6 +58,14 @@ namespace State
         // Ensure the handle exists
         makeGPUHandle(state, handle);
 
+        if (!handle.handle.has_value() || *handle.handle == 0)
+        {
+            Log(Debug::Error) << "Failed to create bindless handle for texture index " << handle.virtualIndex
+                              << " (" << handle.filename << ")";
+            mTextures[handle.virtualIndex] = mFallbackHandle;
+            return handle.virtualIndex;
+        }
+
         auto* ext = state.get<osg::GLExtensions>();
         ext->glMakeTextureHandleResident(*handle.handle);
         handle.resident = true;
@@ -74,6 +85,42 @@ namespace State
         handle.resident = false;
     }
 
+    void GPUState::initFallbackTexture(osg::State& state)
+    {
+        osg::ref_ptr<osg::Image> image = new osg::Image;
+        image->allocateImage(1, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE);
+        unsigned char* data = image->data();
+        data[0] = 255; data[1] = 255; data[2] = 255; data[3] = 255;
+
+        mFallbackTexture = new osg::Texture2D(image);
+        mFallbackTexture->setFilter(osg::Texture::MIN_FILTER, osg::Texture::NEAREST);
+        mFallbackTexture->setFilter(osg::Texture::MAG_FILTER, osg::Texture::NEAREST);
+        mFallbackTexture->setWrap(osg::Texture::WRAP_S, osg::Texture::REPEAT);
+        mFallbackTexture->setWrap(osg::Texture::WRAP_T, osg::Texture::REPEAT);
+
+        mFallbackTexture->apply(state);
+        state.applyTextureAttribute(0, mFallbackTexture);
+
+        const unsigned int contextId = state.getContextID();
+        osg::Texture::TextureObject* textureObject = mFallbackTexture->getTextureObject(contextId);
+        if (!textureObject)
+        {
+            Log(Debug::Error) << "Failed to create fallback bindless texture";
+            return;
+        }
+
+        auto* ext = state.get<osg::GLExtensions>();
+        mFallbackHandle = ext->glGetTextureHandle(textureObject->id());
+        if (mFallbackHandle == 0)
+        {
+            Log(Debug::Error) << "glGetTextureHandle returned 0 for fallback texture";
+            return;
+        }
+
+        ext->glMakeTextureHandleResident(mFallbackHandle);
+        Log(Debug::Info) << "Bindless fallback texture ready, handle=" << mFallbackHandle;
+    }
+
     void GPUState::drawImplementation(osg::RenderInfo& renderInfo) const
     {
         auto drawStart = std::chrono::high_resolution_clock::now();
@@ -91,6 +138,8 @@ namespace State
 
             ext->glGenBuffers(1, &mSSBOMaterials);
             ext->glGenBuffers(1, &mSSBOTextures);
+
+            const_cast<GPUState*>(this)->initFallbackTexture(state);
         }
 
         if (!materials.empty())
@@ -137,9 +186,12 @@ namespace State
 
         if (!mPendingTextures.empty())
         {
-            mTextures.resize(std::max(mTextures.size(), mPendingTextures.rbegin()->first + 1));
+            size_t requiredSize = mPendingTextures.rbegin()->first + 1;
+            if (requiredSize > mTextures.size())
+                mTextures.resize(requiredSize, mFallbackHandle);
 
-            constexpr size_t maxUploadsPerFrame = 8;
+            const bool bulkLoad = mPendingTextures.size() > 32;
+            const size_t maxUploadsPerFrame = bulkLoad ? std::numeric_limits<size_t>::max() : 8;
             size_t uploads = 0;
 
             for (auto it = mPendingTextures.begin(); it != mPendingTextures.end(); )

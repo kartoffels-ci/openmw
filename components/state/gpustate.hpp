@@ -7,6 +7,7 @@
 #include <unordered_set>
 
 #include <osg/Drawable>
+#include <osg/Texture2D>
 
 #include <components/state/material.hpp>
 
@@ -43,6 +44,9 @@ namespace State
         mutable size_t mTextureBufferSize = 0;
         mutable std::map<std::size_t, BindlessTextureHandle> mPendingTextures;
         mutable size_t mUploadCount = 0;
+        mutable std::uint64_t mFallbackHandle = 0;
+        osg::ref_ptr<osg::Texture2D> mFallbackTexture;
+        void initFallbackTexture(osg::State& state);
     };
 }
 
