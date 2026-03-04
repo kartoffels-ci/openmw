@@ -155,13 +155,12 @@ namespace State
 
             size_t newSize = sizeof(Material::GPUData) * mMaterials.size();
 
-            // If the buffer hasn't been initialized or size has changed, update it
-            if (mBufferSize == 0 || newSize > mBufferSize)
-            {
-                // Allocate new buffer size if the vector has grown or if it's uninitialized
-                ext->glBufferData(GL_SHADER_STORAGE_BUFFER, newSize, nullptr, GL_DYNAMIC_DRAW);
-                mBufferSize = newSize;
-            }
+            // Orphan-before-write: glBufferData(null) discards the old allocation (GPU
+            // keeps reading it) and gives us a fresh one, avoiding GPU/CPU sync stalls.
+            // AMD validates SSBO contents at draw time — writing in-place while the GPU
+            // reads the previous frame's data is undefined behavior on AMD.
+            ext->glBufferData(GL_SHADER_STORAGE_BUFFER, newSize, nullptr, GL_DYNAMIC_DRAW);
+            mBufferSize = newSize;
 
             ext->glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, newSize, mMaterials.data());
 
@@ -216,15 +215,17 @@ namespace State
                 it = mPendingTextures.erase(it);
             }
 
+            if (mTextures.size() > 8192 && mTextures.size() % 1024 == 0)
+                Log(Debug::Warning) << "Bindless texture count high: " << mTextures.size()
+                                    << " — AMD descriptor heap exhaustion possible";
+
             ext->glBindBuffer(GL_SHADER_STORAGE_BUFFER, mSSBOTextures);
 
             size_t newSize = sizeof(std::uint64_t) * mTextures.size();
 
-            if (mTextureBufferSize == 0 || newSize > mTextureBufferSize)
-            {
-                ext->glBufferData(GL_SHADER_STORAGE_BUFFER, newSize, nullptr, GL_DYNAMIC_DRAW);
-                mTextureBufferSize = newSize;
-            }
+            // Orphan-before-write (see materials SSBO comment above).
+            ext->glBufferData(GL_SHADER_STORAGE_BUFFER, newSize, nullptr, GL_DYNAMIC_DRAW);
+            mTextureBufferSize = newSize;
 
             ext->glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, newSize, mTextures.data());
 
@@ -244,7 +245,55 @@ namespace State
                               << " drawImpl=" << std::fixed << std::setprecision(1) << drawMs << "ms";
     }
 
-    void GPUState::releaseGLObjects(osg::State* state) const {}
+    void GPUState::releaseGLObjects(osg::State* state) const
+    {
+        if (!state)
+        {
+            osg::Drawable::releaseGLObjects(state);
+            return;
+        }
+
+        auto* ext = state->get<osg::GLExtensions>();
+
+        // Make all texture handles non-resident
+        for (auto& handle : mTextures)
+        {
+            if (handle != 0 && handle != mFallbackHandle)
+                ext->glMakeTextureHandleNonResident(handle);
+        }
+        mTextures.clear();
+
+        // Clean up any pending handles that were made resident
+        for (auto& [idx, handle] : mPendingTextures)
+        {
+            if (handle.resident && handle.handle.has_value())
+                ext->glMakeTextureHandleNonResident(*handle.handle);
+        }
+        mPendingTextures.clear();
+
+        if (mFallbackHandle != 0)
+        {
+            ext->glMakeTextureHandleNonResident(mFallbackHandle);
+            mFallbackHandle = 0;
+        }
+
+        // Delete SSBOs
+        if (mSSBOMaterials)
+        {
+            ext->glDeleteBuffers(1, &mSSBOMaterials);
+            mSSBOMaterials = 0;
+        }
+        if (mSSBOTextures)
+        {
+            ext->glDeleteBuffers(1, &mSSBOTextures);
+            mSSBOTextures = 0;
+        }
+
+        mBufferSize = 0;
+        mTextureBufferSize = 0;
+
+        osg::Drawable::releaseGLObjects(state);
+    }
 
     void GPUState::traverse(osg::NodeVisitor& nv)
     {
