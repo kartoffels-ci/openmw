@@ -1,5 +1,7 @@
 #include "resourcemanager.hpp"
 
+#include <sstream>
+
 #include <components/debug/debuglog.hpp>
 
 namespace State
@@ -32,9 +34,9 @@ namespace State
         std::string filename = texture->getImage()->getFileName();
         if (filename.empty())
         {
-            Log(Debug::Error) << "BAD IMAGE: " << texture.get();
-            return 0;
-            throw std::runtime_error("Empty filename, this texture doesn't look right");
+            std::ostringstream ss;
+            ss << "__procedural_" << texture.get();
+            filename = ss.str();
         }
 
         for (std::size_t i = 0; i < mTextures.size(); ++i)

@@ -745,7 +745,10 @@ namespace NifOsg
             }
 
             if (nifNode->mRecordType == Nif::RC_NiBSAnimationNode || nifNode->mRecordType == Nif::RC_NiBSParticleNode)
+            {
                 args.mAnimFlags = nifNode->mFlags;
+                node->setUserValue("skipBindless", true);
+            }
 
             if (nifNode->mRecordType == Nif::RC_NiSortAdjustNode)
             {
@@ -843,6 +846,18 @@ namespace NifOsg
 
             if (composite->getNumControllers() > 0)
             {
+                for (size_t i = 0; i < composite->getNumControllers(); i++)
+                {
+                    if (dynamic_cast<FlipController*>(composite->getController(i))
+                        || dynamic_cast<UVController*>(composite->getController(i)))
+                    {
+                        node->setUserValue("skipBindless", true);
+                        if (node->getNumParents() > 0)
+                            node->getParent(0)->setUserValue("skipBindless", true);
+                        break;
+                    }
+                }
+
                 osg::Callback* cb = composite;
                 if (composite->getNumControllers() == 1)
                     cb = composite->getController(0);
