@@ -43,6 +43,10 @@ namespace State
         if (!textureObject)
             return;
 
+        // GL spec: texture parameters (filter, wrap) become immutable after this call.
+        // The ShaderVisitor strips bindless textures from StateSets to prevent OSG from
+        // re-applying parameters. If any code path modifies this texture's GL params
+        // after this point, AMD will crash.
         handle.handle = ext->glGetTextureHandle(textureObject->id());
     }
 
@@ -131,10 +135,9 @@ namespace State
 
         auto& materials = mQueuedGPUMaterials[frameId];
 
-        static bool initBuffers = true;
-        if (initBuffers)
+        if (!mInitialized)
         {
-            initBuffers = false;
+            mInitialized = true;
 
             ext->glGenBuffers(1, &mSSBOMaterials);
             ext->glGenBuffers(1, &mSSBOTextures);
@@ -235,6 +238,16 @@ namespace State
         ext->glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, mSSBOTextures);
         ext->glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
+        // makeGPUHandle pollutes texture unit 0 via apply()/applyTextureAttribute().
+        // Dirty all attributes so OSG re-applies state for the next drawable instead
+        // of trusting its stale tracking. Without this, AMD may skip a required texture
+        // rebind and render with the wrong texture or crash.
+        if (mUploadCount > 0)
+        {
+            state.dirtyAllAttributes();
+            state.dirtyAllModes();
+        }
+
         auto drawEnd = std::chrono::high_resolution_clock::now();
         double drawMs = std::chrono::duration<double, std::milli>(drawEnd - drawStart).count();
 
@@ -291,6 +304,7 @@ namespace State
 
         mBufferSize = 0;
         mTextureBufferSize = 0;
+        mInitialized = false;
 
         osg::Drawable::releaseGLObjects(state);
     }
