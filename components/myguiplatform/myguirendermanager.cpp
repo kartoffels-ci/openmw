@@ -89,13 +89,6 @@ namespace MyGUIPlatform
         {
             osg::State* state = renderInfo.getState();
 
-            // Unbind any SSBOs left bound by bindless texture rendering (GPUState).
-            // Indexed binding points persist until explicitly cleared — leaving them
-            // bound while issuing legacy fixed-function draws crashes some drivers.
-            const osg::GLExtensions* ext = state->get<osg::GLExtensions>();
-            ext->glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, 0);
-            ext->glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, 0);
-
             state->pushStateSet(mStateSet);
             state->apply();
 

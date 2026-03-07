@@ -193,28 +193,15 @@ namespace State
             if (requiredSize > mTextures.size())
                 mTextures.resize(requiredSize, mFallbackHandle);
 
-            const bool bulkLoad = mPendingTextures.size() > 32;
-            const size_t maxUploadsPerFrame = bulkLoad ? std::numeric_limits<size_t>::max() : 8;
-            size_t uploads = 0;
-
             for (auto it = mPendingTextures.begin(); it != mPendingTextures.end(); )
             {
                 auto& [index, handle] = *it;
-                bool needsUpload = !handle.handle.has_value();
-
-                if (needsUpload && uploads >= maxUploadsPerFrame)
-                {
-                    ++it;
-                    continue;
-                }
 
                 if (handle.filename.empty())
                     Log(Debug::Error) << "Empty filename, this texture doesn't look right " << index;
 
                 const_cast<GPUState*>(this)->open(state, handle);
-
-                if (needsUpload)
-                    ++uploads;
+                ++mUploadCount;
 
                 it = mPendingTextures.erase(it);
             }

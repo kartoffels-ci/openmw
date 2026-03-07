@@ -238,7 +238,6 @@ namespace SceneUtil
         osg::ref_ptr<GlowUpdater> glowUpdater
             = new GlowUpdater(texUnit, glowColor, textures, node, glowDuration, resourceSystem);
         node->addUpdateCallback(glowUpdater);
-        node->setUserValue("skipBindless", true);
 
         // set a texture now so that the ShaderVisitor can find it
         osg::ref_ptr<osg::StateSet> writableStateSet = nullptr;

@@ -128,8 +128,6 @@ namespace Shader
             // the Node that requested these requirements
             osg::Node* mNode = nullptr;
 
-            bool mBindless = false;
-
             osg::ref_ptr<osg::Texture2D> mDiffuseMap = nullptr;
             osg::ref_ptr<osg::Texture2D> mNormalMap = nullptr;
             osg::ref_ptr<osg::Texture2D> mEmissiveMap = nullptr;

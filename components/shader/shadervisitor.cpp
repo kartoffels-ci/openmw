@@ -299,29 +299,20 @@ namespace Shader
         if (node.getUserValue(Misc::OsgUserValues::sXSoftEffect, softEffect) && softEffect)
             mRequirements.back().mSoftParticles = true;
 
-        if (mRequirements.back().mBindless)
-        {
-            std::string prefix;
-            if (node.getUserValue("shaderPrefix", prefix) && prefix != "objects")
-                mRequirements.back().mBindless = false;
-
-            bool skip = false;
-            if (node.getUserValue("skipBindless", skip) && skip)
-                mRequirements.back().mBindless = false;
-        }
-
         // Make sure to disregard any state that came from a previous call to createProgram
         osg::ref_ptr<AddedState> addedState = getAddedState(*stateset);
 
         auto applyBindlessTexture = [&](osg::ref_ptr<osg::Texture2D>& ref, unsigned int unit) {
-            if (!mRequirements.back().mBindless)
+            if (!State::Material::getBindlessEnabled())
                 return;
 
-            // Capture the texture ref for bindless registration (adjustGeometry packs indices into
-            // vertex attribs). Leave the texture in the StateSet — the bindless shader ignores sampler
-            // uniforms (reads from SSBO), and keeping them ensures non-bindless re-runs (e.g. after
-            // enchantment glow sets skipBindless) still find their textures.
             ref = dynamic_cast<osg::Texture2D*>(stateset->getTextureAttribute(unit, osg::StateAttribute::TEXTURE));
+
+            if (!writableStateSet)
+                writableStateSet = getWritableStateSet(node);
+
+            writableStateSet->setTextureMode(unit, GL_TEXTURE_2D, osg::StateAttribute::OFF);
+            writableStateSet->removeTextureAttribute(unit, osg::StateAttribute::TEXTURE);
         };
 
         if (!texAttributes.empty())
@@ -646,11 +637,7 @@ namespace Shader
     void ShaderVisitor::pushRequirements(osg::Node& node)
     {
         if (mRequirements.empty())
-        {
             mRequirements.emplace_back();
-            mRequirements.back().mBindless
-                = State::Material::getBindlessEnabled() && mDefaultShaderPrefix == "objects";
-        }
         else
             mRequirements.push_back(mRequirements.back());
         mRequirements.back().mNode = &node;
@@ -719,10 +706,7 @@ namespace Shader
         defineMap["parallax"] = reqs.mNormalHeight ? "1" : "0";
         defineMap["reconstructNormalZ"] = reqs.mReconstructNormalZ ? "1" : "0";
 
-        if (!reqs.mBindless)
-            defineMap["legacyBindings"] = "1";
-
-        if (!reqs.mBindless)
+        if (!State::Material::getBindlessEnabled())
         {
             writableStateSet->addUniform(new osg::Uniform("colorMode", static_cast<int>(reqs.mMaterial->getColorMode())));
             addedState->addUniform("colorMode");
@@ -845,7 +829,7 @@ namespace Shader
 
         for (const auto& [unit, name] : reqs.mTextures)
         {
-            if (reqs.mBindless)
+            if (State::Material::getBindlessEnabled())
                 continue;
 
             writableStateSet->addUniform(new osg::Uniform(name.c_str(), unit), osg::StateAttribute::ON);
@@ -967,7 +951,7 @@ namespace Shader
 
         ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
         // Bindless path: pack material/texture indices into per-vertex attribs for SSBO lookup
-        if (reqs.mBindless)
+        if (State::Material::getBindlessEnabled())
         {
             std::size_t materialIndex = mResourceManager.registerMaterial(reqs.mMaterial);
             std::size_t diffuseIndex = reqs.mDiffuseMap ? mResourceManager.registerTexture(reqs.mDiffuseMap) : 0;
@@ -1126,7 +1110,7 @@ namespace Shader
             if (drawable.getStateSet())
                 applyStateSet(drawable.getStateSet(), drawable);
 
-            if (mRequirements.back().mBindless)
+            if (State::Material::getBindlessEnabled())
             {
                 if (auto* particleSys = dynamic_cast<NifOsg::ParticleSystem*>(&drawable))
                 {
