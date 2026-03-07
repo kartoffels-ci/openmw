@@ -11,6 +11,7 @@
 #include <components/state/resourcemanager.hpp>
 
 #include <components/debug/debuglog.hpp>
+#include <components/settings/values.hpp>
 
 #include "texture.hpp"
 
@@ -251,7 +252,7 @@ namespace State
         auto drawEnd = std::chrono::high_resolution_clock::now();
         double drawMs = std::chrono::duration<double, std::milli>(drawEnd - drawStart).count();
 
-        if (mUploadCount > 0 || drawMs > 5.0)
+        if (Settings::general().mFrameProfiling && (mUploadCount > 0 || drawMs > 5.0))
             Log(Debug::Error) << "[GPUState] frame " << state.getFrameStamp()->getFrameNumber()
                               << " uploads=" << mUploadCount
                               << " pending=" << mPendingTextures.size()

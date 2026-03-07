@@ -356,9 +356,17 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
     mViewer->renderingTraversals();
     auto renderEnd = std::chrono::high_resolution_clock::now();
     double renderMs = std::chrono::duration<double, std::milli>(renderEnd - renderStart).count();
-    if (renderMs > 16.0)
-        Log(Debug::Error) << "[Frame] " << frameNumber
-                          << " renderingTraversals=" << std::fixed << std::setprecision(1) << renderMs << "ms";
+    if (Settings::general().mFrameProfiling && renderMs > 20.0)
+    {
+        static auto lastLog = std::chrono::steady_clock::time_point{};
+        auto now = std::chrono::steady_clock::now();
+        if (now - lastLog >= std::chrono::seconds(5))
+        {
+            lastLog = now;
+            Log(Debug::Error) << "[Frame] " << frameNumber
+                              << " renderingTraversals=" << std::fixed << std::setprecision(1) << renderMs << "ms";
+        }
+    }
 
     mLuaWorker->finishUpdate(frameStart, frameNumber, *stats);
 

@@ -126,9 +126,17 @@ namespace
             auto now = std::chrono::high_resolution_clock::now();
             double drawMs = std::chrono::duration<double, std::milli>(now - mInitial->mInitialTime).count();
 
-            if (drawMs > 16.0)
-                Log(Debug::Error) << "[Draw] frame " << mInitial->mFrame
-                                  << " renderStages=" << std::fixed << std::setprecision(1) << drawMs << "ms";
+            if (Settings::general().mFrameProfiling && drawMs > 20.0)
+            {
+                static auto lastLog = std::chrono::steady_clock::time_point{};
+                auto now2 = std::chrono::steady_clock::now();
+                if (now2 - lastLog >= std::chrono::seconds(5))
+                {
+                    lastLog = now2;
+                    Log(Debug::Error) << "[Draw] frame " << mInitial->mFrame
+                                      << " renderStages=" << std::fixed << std::setprecision(1) << drawMs << "ms";
+                }
+            }
         }
 
     private:
@@ -380,19 +388,17 @@ namespace MWRender
         if (Settings::shaders().mBindlessTextures)
         {
             const auto& exts = SceneUtil::getGLExtensions();
-            bool hasBindless = osg::isGLExtensionSupported(exts.contextID, "GL_ARB_bindless_texture");
-            bool hasInt64 = osg::isGLExtensionSupported(exts.contextID, "GL_ARB_gpu_shader_int64");
-            if (hasBindless && hasInt64)
+            if (osg::isGLExtensionSupported(exts.contextID, "GL_ARB_bindless_texture"))
             {
                 State::Material::setBindlessEnabled(true);
-                Log(Debug::Info) << "Bindless textures enabled (GL_ARB_bindless_texture + GL_ARB_gpu_shader_int64)";
+                bool hasInt64 = osg::isGLExtensionSupported(exts.contextID, "GL_ARB_gpu_shader_int64");
+                Log(Debug::Info) << "Bindless textures enabled (GL_ARB_bindless_texture"
+                    << (hasInt64 ? " + GL_ARB_gpu_shader_int64" : ", no int64") << ")";
             }
             else
             {
-                Log(Debug::Warning) << "Bindless textures requested but not supported by GPU:"
-                    << (!hasBindless ? " missing GL_ARB_bindless_texture" : "")
-                    << (!hasInt64 ? " missing GL_ARB_gpu_shader_int64" : "")
-                    << ". Falling back to traditional rendering.";
+                Log(Debug::Warning) << "Bindless textures requested but GPU is missing GL_ARB_bindless_texture."
+                    << " Falling back to traditional rendering.";
             }
         }
 
