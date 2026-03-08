@@ -125,6 +125,9 @@ namespace Shader
 
             bool mSoftParticles = false;
 
+            // Skip bindless texture path for this subtree (e.g. enchanted equipment, groundcover)
+            bool mSkipBindless = false;
+
             // the Node that requested these requirements
             osg::Node* mNode = nullptr;
 

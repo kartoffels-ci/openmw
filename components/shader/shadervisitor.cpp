@@ -236,6 +236,51 @@ namespace Shader
         return newUserData.get();
     }
 
+    // Stores textures stripped by the bindless path on the Node (not the StateSet).
+    // Nodes aren't shared by SharedStateManager, so this survives cross-mesh StateSet merging.
+    class StrippedTextures : public osg::Object
+    {
+    public:
+        StrippedTextures() = default;
+        StrippedTextures(const StrippedTextures& rhs, const osg::CopyOp& copyOp)
+            : osg::Object(rhs, copyOp)
+            , mTextures(rhs.mTextures)
+        {
+        }
+        META_Object(Shader, StrippedTextures)
+
+        std::map<unsigned int, osg::ref_ptr<osg::Texture2D>> mTextures;
+    };
+
+    StrippedTextures* getStrippedTextures(osg::Node& node)
+    {
+        if (!node.getUserDataContainer())
+            return nullptr;
+        return static_cast<StrippedTextures*>(node.getUserDataContainer()->getUserObject("strippedTextures"));
+    }
+
+    StrippedTextures* getOrCreateStrippedTextures(osg::Node& node, bool allowModify)
+    {
+        StrippedTextures* existing = getStrippedTextures(node);
+        if (existing && allowModify)
+            return existing;
+        osg::ref_ptr<StrippedTextures> stripped;
+        if (existing && !allowModify)
+            stripped = new StrippedTextures(*existing, osg::CopyOp::SHALLOW_COPY);
+        else
+            stripped = new StrippedTextures();
+        stripped->setName("strippedTextures");
+        osg::UserDataContainer* udc = allowModify
+            ? node.getOrCreateUserDataContainer()
+            : getWritableUserDataContainer(node);
+        unsigned int idx = udc->getUserObjectIndex("strippedTextures");
+        if (idx < udc->getNumUserObjects())
+            udc->setUserObject(idx, stripped);
+        else
+            udc->addUserObject(stripped);
+        return stripped.get();
+    }
+
     osg::StateSet* getRemovedState(osg::StateSet& stateSet)
     {
         if (!stateSet.getUserDataContainer())
@@ -303,7 +348,7 @@ namespace Shader
         osg::ref_ptr<AddedState> addedState = getAddedState(*stateset);
 
         auto applyBindlessTexture = [&](osg::ref_ptr<osg::Texture2D>& ref, unsigned int unit) {
-            if (!State::Material::getBindlessEnabled() || mDefaultShaderPrefix == "groundcover")
+            if (!State::Material::getBindlessEnabled() || mRequirements.back().mSkipBindless)
                 return;
 
             ref = dynamic_cast<osg::Texture2D*>(stateset->getTextureAttribute(unit, osg::StateAttribute::TEXTURE));
@@ -311,18 +356,13 @@ namespace Shader
             if (!writableStateSet)
                 writableStateSet = getWritableStateSet(node);
 
-            // Back up stripped texture in removedState so non-bindless paths (e.g. groundcover) can recover it
+            // Back up stripped texture on the Node (not the StateSet) so non-bindless paths
+            // (groundcover, enchanted equipment) can recover it. Stored on Node because
+            // SharedStateManager merges StateSets across meshes, destroying per-mesh data.
             if (ref)
             {
-                osg::ref_ptr<osg::StateSet> removedState = getRemovedState(*writableStateSet);
-                if (!mAllowedToModifyStateSets && removedState)
-                    removedState = new osg::StateSet(*removedState, osg::CopyOp::SHALLOW_COPY);
-                if (!removedState)
-                    removedState = new osg::StateSet();
-                removedState->setTextureAttribute(unit, ref, osg::StateAttribute::ON);
-                removedState->setTextureMode(unit, GL_TEXTURE_2D, osg::StateAttribute::ON);
-                updateRemovedState(
-                    *getWritableUserDataContainer(*writableStateSet), removedState);
+                StrippedTextures* stripped = getOrCreateStrippedTextures(node, mAllowedToModifyStateSets);
+                stripped->mTextures[unit] = ref;
             }
 
             writableStateSet->setTextureMode(unit, GL_TEXTURE_2D, osg::StateAttribute::OFF);
@@ -651,10 +691,18 @@ namespace Shader
     void ShaderVisitor::pushRequirements(osg::Node& node)
     {
         if (mRequirements.empty())
+        {
             mRequirements.emplace_back();
+            if (mDefaultShaderPrefix == "groundcover")
+                mRequirements.back().mSkipBindless = true;
+        }
         else
             mRequirements.push_back(mRequirements.back());
         mRequirements.back().mNode = &node;
+
+        bool skipBindless = false;
+        if (node.getUserValue("skipBindless", skipBindless) && skipBindless)
+            mRequirements.back().mSkipBindless = true;
     }
 
     void ShaderVisitor::popRequirements()
@@ -720,7 +768,7 @@ namespace Shader
         defineMap["parallax"] = reqs.mNormalHeight ? "1" : "0";
         defineMap["reconstructNormalZ"] = reqs.mReconstructNormalZ ? "1" : "0";
 
-        if (!State::Material::getBindlessEnabled() || mDefaultShaderPrefix == "groundcover")
+        if (!State::Material::getBindlessEnabled() || reqs.mSkipBindless)
         {
             writableStateSet->addUniform(new osg::Uniform("colorMode", static_cast<int>(reqs.mMaterial->getColorMode())));
             addedState->addUniform("colorMode");
@@ -837,8 +885,8 @@ namespace Shader
         if (!node.getUserValue("shaderPrefix", shaderPrefix))
             shaderPrefix = mDefaultShaderPrefix;
 
-        // Groundcover uses attrib indices 6/7 for instancing, force legacy texture bindings
-        if (mDefaultShaderPrefix == "groundcover")
+        // Force legacy texture bindings when bindless is skipped (groundcover, enchanted equipment)
+        if (reqs.mSkipBindless)
             defineMap["legacyBindings"] = "1";
 
         auto program = mShaderManager.getProgram(shaderPrefix, defineMap, mProgramTemplate);
@@ -847,7 +895,7 @@ namespace Shader
 
         for (const auto& [unit, name] : reqs.mTextures)
         {
-            if (State::Material::getBindlessEnabled() && mDefaultShaderPrefix != "groundcover")
+            if (State::Material::getBindlessEnabled() && !reqs.mSkipBindless)
                 continue;
 
             writableStateSet->addUniform(new osg::Uniform(name.c_str(), unit), osg::StateAttribute::ON);
@@ -969,8 +1017,8 @@ namespace Shader
 
         ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
         // Bindless path: pack material/texture indices into per-vertex attribs for SSBO lookup
-        // Groundcover excluded: attrib indices 6/7 conflict with instancing data (aOffset/aRotation)
-        if (State::Material::getBindlessEnabled() && mDefaultShaderPrefix != "groundcover")
+        // Skipped for groundcover (attrib 6/7 conflict) and enchanted equipment (dynamic textures)
+        if (State::Material::getBindlessEnabled() && !reqs.mSkipBindless)
         {
             std::size_t materialIndex = mResourceManager.registerMaterial(reqs.mMaterial);
             std::size_t diffuseIndex = reqs.mDiffuseMap ? mResourceManager.registerTexture(reqs.mDiffuseMap) : 0;
@@ -1263,12 +1311,32 @@ namespace Shader
                     for (const auto& [mode, value] : removedState->getTextureModeList()[unit])
                         writableStateSet->setTextureMode(unit, mode, value);
                 }
+            }
+        }
 
-                for (unsigned int unit = 0; unit < removedState->getTextureAttributeList().size(); ++unit)
-                {
-                    for (const auto& [typePair, attrPair] : removedState->getTextureAttributeList()[unit])
-                        writableStateSet->setTextureAttribute(unit, attrPair.first, attrPair.second);
-                }
+        // Restore textures stripped by the bindless path (stored on the Node, not the StateSet)
+        if (StrippedTextures* stripped = getStrippedTextures(node))
+        {
+            osg::ref_ptr<osg::StateSet> writableStateSet;
+            if (mAllowedToModifyStateSets)
+                writableStateSet = node.getOrCreateStateSet();
+            else
+                writableStateSet = getWritableStateSet(node);
+
+            for (const auto& [unit, texture] : stripped->mTextures)
+            {
+                writableStateSet->setTextureAttributeAndModes(unit, texture, osg::StateAttribute::ON);
+            }
+
+            // Remove the strippedTextures marker
+            osg::UserDataContainer* udc = mAllowedToModifyStateSets
+                ? node.getUserDataContainer()
+                : getWritableUserDataContainer(node);
+            if (udc)
+            {
+                unsigned int idx = udc->getUserObjectIndex("strippedTextures");
+                if (idx < udc->getNumUserObjects())
+                    udc->removeUserObject(idx);
             }
         }
 

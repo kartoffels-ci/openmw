@@ -16,6 +16,7 @@
 #include <components/resource/imagemanager.hpp>
 #include <components/resource/scenemanager.hpp>
 #include <components/sceneutil/texturetype.hpp>
+#include <components/state/material.hpp>
 #include <components/vfs/pathutil.hpp>
 
 namespace SceneUtil
@@ -234,6 +235,15 @@ namespace SceneUtil
         FindLowestUnusedTexUnitVisitor findLowestUnusedTexUnitVisitor;
         node->accept(findLowestUnusedTexUnitVisitor);
         int texUnit = findLowestUnusedTexUnitVisitor.mLowestUnusedTexUnit;
+
+        // Enchanted glow uses per-frame texture animation (GlowUpdater), which is incompatible
+        // with bindless textures (handles become immutable). Restore stripped textures and mark
+        // this subtree to use the legacy shader path.
+        if (State::Material::getBindlessEnabled())
+        {
+            resourceSystem->getSceneManager()->reinstateRemovedState(node);
+            node->setUserValue("skipBindless", true);
+        }
 
         osg::ref_ptr<GlowUpdater> glowUpdater
             = new GlowUpdater(texUnit, glowColor, textures, node, glowDuration, resourceSystem);
