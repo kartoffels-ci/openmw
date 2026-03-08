@@ -67,6 +67,9 @@ namespace SceneUtil
         mShadowTechnique->setSplitPointUniformLogarithmicRatio(settings.mSplitPointUniformLogarithmicRatio);
         mShadowTechnique->setSplitPointDeltaBias(settings.mSplitPointBias);
 
+        mShadowTechnique->setShadowUpdateInterval(settings.mShadowUpdateInterval);
+        mShadowTechnique->setFrustumExpansion(settings.mShadowFrustumExpansionBase, settings.mShadowFrustumExpansionPerSkip);
+
         mShadowTechnique->setPolygonOffset(settings.mPolygonOffsetFactor, settings.mPolygonOffsetUnits);
 
         if (settings.mUseFrontFaceCulling)
@@ -172,6 +175,9 @@ namespace SceneUtil
 
         definesWithShadows["limitShadowMapDistance"] = settings.mMaximumShadowMapDistance > 0 ? "1" : "0";
 
+        definesWithShadows["softShadows"] = settings.mSoftShadows ? "1" : "0";
+        definesWithShadows["shadowMapResolution"] = std::to_string(settings.mShadowMapResolution) + ".0";
+
         return definesWithShadows;
     }
 
@@ -193,6 +199,9 @@ namespace SceneUtil
 
         definesWithoutShadows["limitShadowMapDistance"] = "0";
 
+        definesWithoutShadows["softShadows"] = "0";
+        definesWithoutShadows["shadowMapResolution"] = "1024.0";
+
         return definesWithoutShadows;
     }
 
@@ -208,6 +217,13 @@ namespace SceneUtil
     {
         if (mEnableShadows)
             mShadowTechnique->enableShadows();
+        mShadowSettings->setCastsShadowTraversalMask(mOutdoorShadowCastingMask);
+    }
+
+    void ShadowManager::updateCastingMasks(unsigned int outdoorMask, unsigned int indoorMask)
+    {
+        mOutdoorShadowCastingMask = outdoorMask;
+        mIndoorShadowCastingMask = indoorMask;
         mShadowSettings->setCastsShadowTraversalMask(mOutdoorShadowCastingMask);
     }
 }
