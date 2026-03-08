@@ -1,7 +1,9 @@
 #include "sky.hpp"
 
 #include <osg/Depth>
+#include <osg/Geometry>
 #include <osg/PositionAttitudeTransform>
+#include <osg/Texture2D>
 
 #include <osgParticle/BoxPlacer>
 #include <osgParticle/ModularEmitter>
@@ -15,7 +17,10 @@
 #include <components/sceneutil/depth.hpp>
 #include <components/sceneutil/rtt.hpp>
 #include <components/sceneutil/shadow.hpp>
+#include <components/sceneutil/texturetype.hpp>
 #include <components/sceneutil/visitor.hpp>
+
+#include <components/state/material.hpp>
 
 #include <components/resource/imagemanager.hpp>
 #include <components/resource/scenemanager.hpp>
@@ -323,6 +328,46 @@ namespace MWRender
         ModVertexAlphaVisitor modStars(ModVertexAlphaVisitor::Stars);
         atmosphereNight->accept(modStars);
         mAtmosphereNightUpdater = new AtmosphereNightUpdater(mSceneManager->getImageManager(), forceShaders);
+
+        // When bindless textures are enabled, the ShaderVisitor strips textures from the NIF's
+        // geometry StateSets (they go into the SSBO instead). But the sky uses its own non-bindless
+        // shader, so it needs the texture on a traditional sampler unit. Recover the stripped
+        // texture from the user data where the ShaderVisitor stashed it.
+        if (State::Material::getBindlessEnabled())
+        {
+            struct FindStrippedTexture : public osg::NodeVisitor
+            {
+                osg::ref_ptr<osg::Texture2D> result;
+                FindStrippedTexture()
+                    : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN)
+                {
+                }
+                void apply(osg::Node& node) override
+                {
+                    if (!result)
+                    {
+                        if (auto* udc = node.getUserDataContainer())
+                        {
+                            for (unsigned int i = 0; i < udc->getNumUserObjects(); ++i)
+                            {
+                                if (auto* tex = dynamic_cast<osg::Texture2D*>(udc->getUserObject(i)))
+                                {
+                                    result = tex;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (!result)
+                        traverse(node);
+                }
+            };
+            FindStrippedTexture finder;
+            atmosphereNight->accept(finder);
+            if (finder.result)
+                mAtmosphereNightUpdater->setDiffuseTexture(std::move(finder.result));
+        }
+
         atmosphereNight->addUpdateCallback(mAtmosphereNightUpdater);
 
         mSun = std::make_unique<Sun>(mEarlyRenderBinRoot, *mSceneManager);
@@ -403,16 +448,17 @@ namespace MWRender
         raindropTex->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
         raindropTex->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
 
+        stateset->setTextureAttributeAndModes(0, new SceneUtil::TextureType("diffuseMap"), osg::StateAttribute::ON);
         stateset->setTextureAttributeAndModes(0, raindropTex);
         stateset->setNestRenderBins(false);
         stateset->setRenderingHint(osg::StateSet::TRANSPARENT_BIN);
         stateset->setMode(GL_CULL_FACE, osg::StateAttribute::OFF);
         stateset->setMode(GL_BLEND, osg::StateAttribute::ON);
 
-        osg::ref_ptr<osg::Material> mat = new osg::Material;
-        mat->setAmbient(osg::Material::FRONT_AND_BACK, osg::Vec4f(1, 1, 1, 1));
-        mat->setDiffuse(osg::Material::FRONT_AND_BACK, osg::Vec4f(1, 1, 1, 1));
-        mat->setColorMode(osg::Material::AMBIENT_AND_DIFFUSE);
+        osg::ref_ptr<State::Material> mat = new State::Material;
+        mat->setAmbient(osg::Vec4f(1, 1, 1, 1));
+        mat->setDiffuse(osg::Vec4f(1, 1, 1, 1));
+        mat->setColorMode(State::ColorModes::ColorMode_AmbientAndDiffuse);
         stateset->setAttributeAndModes(mat);
 
         osgParticle::Particle& particleTemplate = mRainParticleSystem->getDefaultParticleTemplate();

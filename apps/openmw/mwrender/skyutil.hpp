@@ -143,6 +143,7 @@ namespace MWRender
         AtmosphereNightUpdater(Resource::ImageManager* imageManager, bool forceShaders);
 
         void setFade(float fade);
+        void setDiffuseTexture(osg::ref_ptr<osg::Texture2D> texture);
 
     protected:
         void setDefaults(osg::StateSet* stateset) override;
@@ -152,6 +153,7 @@ namespace MWRender
     private:
         osg::Vec4f mColor;
         osg::ref_ptr<osg::Texture2D> mTexture;
+        osg::ref_ptr<osg::Texture2D> mDiffuseTexture;
         bool mForceShaders;
     };
 

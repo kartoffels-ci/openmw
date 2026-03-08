@@ -493,12 +493,26 @@ namespace MWRender
         mColor.a() = fade;
     }
 
+    void AtmosphereNightUpdater::setDiffuseTexture(osg::ref_ptr<osg::Texture2D> texture)
+    {
+        mDiffuseTexture = std::move(texture);
+    }
+
     void AtmosphereNightUpdater::setDefaults(osg::StateSet* stateset)
     {
         if (mForceShaders)
         {
             stateset->addUniform(new osg::Uniform("opacity", 0.f));
             stateset->addUniform(new osg::Uniform("pass", static_cast<int>(Pass::Atmosphere_Night)));
+
+            // When bindless textures strip the NIF's diffuseMap from child geometry,
+            // re-apply it on the parent StateSet so the sky shader can sample it.
+            if (mDiffuseTexture)
+            {
+                stateset->setTextureAttributeAndModes(
+                    0, mDiffuseTexture, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
+                stateset->addUniform(new osg::Uniform("diffuseMap", 0));
+            }
         }
         else
         {
