@@ -303,13 +303,27 @@ namespace Shader
         osg::ref_ptr<AddedState> addedState = getAddedState(*stateset);
 
         auto applyBindlessTexture = [&](osg::ref_ptr<osg::Texture2D>& ref, unsigned int unit) {
-            if (!State::Material::getBindlessEnabled())
+            if (!State::Material::getBindlessEnabled() || mDefaultShaderPrefix == "groundcover")
                 return;
 
             ref = dynamic_cast<osg::Texture2D*>(stateset->getTextureAttribute(unit, osg::StateAttribute::TEXTURE));
 
             if (!writableStateSet)
                 writableStateSet = getWritableStateSet(node);
+
+            // Back up stripped texture in removedState so non-bindless paths (e.g. groundcover) can recover it
+            if (ref)
+            {
+                osg::ref_ptr<osg::StateSet> removedState = getRemovedState(*writableStateSet);
+                if (!mAllowedToModifyStateSets && removedState)
+                    removedState = new osg::StateSet(*removedState, osg::CopyOp::SHALLOW_COPY);
+                if (!removedState)
+                    removedState = new osg::StateSet();
+                removedState->setTextureAttribute(unit, ref, osg::StateAttribute::ON);
+                removedState->setTextureMode(unit, GL_TEXTURE_2D, osg::StateAttribute::ON);
+                updateRemovedState(
+                    *getWritableUserDataContainer(*writableStateSet), removedState);
+            }
 
             writableStateSet->setTextureMode(unit, GL_TEXTURE_2D, osg::StateAttribute::OFF);
             writableStateSet->removeTextureAttribute(unit, osg::StateAttribute::TEXTURE);
@@ -706,7 +720,7 @@ namespace Shader
         defineMap["parallax"] = reqs.mNormalHeight ? "1" : "0";
         defineMap["reconstructNormalZ"] = reqs.mReconstructNormalZ ? "1" : "0";
 
-        if (!State::Material::getBindlessEnabled())
+        if (!State::Material::getBindlessEnabled() || mDefaultShaderPrefix == "groundcover")
         {
             writableStateSet->addUniform(new osg::Uniform("colorMode", static_cast<int>(reqs.mMaterial->getColorMode())));
             addedState->addUniform("colorMode");
@@ -823,13 +837,17 @@ namespace Shader
         if (!node.getUserValue("shaderPrefix", shaderPrefix))
             shaderPrefix = mDefaultShaderPrefix;
 
+        // Groundcover uses attrib indices 6/7 for instancing, force legacy texture bindings
+        if (mDefaultShaderPrefix == "groundcover")
+            defineMap["legacyBindings"] = "1";
+
         auto program = mShaderManager.getProgram(shaderPrefix, defineMap, mProgramTemplate);
         writableStateSet->setAttributeAndModes(program, osg::StateAttribute::ON);
         addedState->setAttributeAndModes(std::move(program));
 
         for (const auto& [unit, name] : reqs.mTextures)
         {
-            if (State::Material::getBindlessEnabled())
+            if (State::Material::getBindlessEnabled() && mDefaultShaderPrefix != "groundcover")
                 continue;
 
             writableStateSet->addUniform(new osg::Uniform(name.c_str(), unit), osg::StateAttribute::ON);
@@ -951,7 +969,8 @@ namespace Shader
 
         ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
         // Bindless path: pack material/texture indices into per-vertex attribs for SSBO lookup
-        if (State::Material::getBindlessEnabled())
+        // Groundcover excluded: attrib indices 6/7 conflict with instancing data (aOffset/aRotation)
+        if (State::Material::getBindlessEnabled() && mDefaultShaderPrefix != "groundcover")
         {
             std::size_t materialIndex = mResourceManager.registerMaterial(reqs.mMaterial);
             std::size_t diffuseIndex = reqs.mDiffuseMap ? mResourceManager.registerTexture(reqs.mDiffuseMap) : 0;
@@ -1243,6 +1262,12 @@ namespace Shader
                 {
                     for (const auto& [mode, value] : removedState->getTextureModeList()[unit])
                         writableStateSet->setTextureMode(unit, mode, value);
+                }
+
+                for (unsigned int unit = 0; unit < removedState->getTextureAttributeList().size(); ++unit)
+                {
+                    for (const auto& [typePair, attrPair] : removedState->getTextureAttributeList()[unit])
+                        writableStateSet->setTextureAttribute(unit, attrPair.first, attrPair.second);
                 }
             }
         }

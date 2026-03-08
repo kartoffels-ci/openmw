@@ -443,6 +443,10 @@ namespace MWRender
             // Keep link to original mesh to keep it in cache
             group->getOrCreateUserDataContainer()->addUserObject(new Resource::TemplateRef(temp));
 
+            // Restore textures stripped by the bindless path during template loading,
+            // since groundcover uses its own legacy shader path with instancing attribs on indices 6/7
+            mSceneManager->reinstateRemovedState(node);
+
             InstancingVisitor visitor(entries, worldCenter);
             node->accept(visitor);
             group->addChild(node);
